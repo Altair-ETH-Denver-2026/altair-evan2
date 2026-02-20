@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { UserRound, LogOut, Settings, Wallet } from 'lucide-react';
 import { useEffect as useClientEffect, useState as useClientState } from 'react';
+import { BALANCE_DECIMALS } from '../../config';
 
 export default function UserMenu() {
   const { logout, authenticated } = usePrivy();
@@ -75,7 +76,7 @@ export default function UserMenu() {
               >
                 {Number.isNaN(Number(ethBalance))
                   ? ethBalance
-                  : Number(ethBalance).toFixed(8)}
+                  : Number(ethBalance).toFixed(BALANCE_DECIMALS)}
               </span>
             </div>
             <div className="h-[1px] bg-gray-700 w-full" />
@@ -87,7 +88,7 @@ export default function UserMenu() {
               >
                 {Number.isNaN(Number(usdcBalance))
                   ? usdcBalance
-                  : Number(usdcBalance).toFixed(8)}
+                  : Number(usdcBalance).toFixed(BALANCE_DECIMALS)}
               </span>
             </div>
           </div>

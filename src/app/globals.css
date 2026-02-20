@@ -1,5 +1,23 @@
 @import "tailwindcss";
 
+@keyframes spinClock {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinCounter {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

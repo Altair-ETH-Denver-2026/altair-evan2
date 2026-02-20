@@ -2,11 +2,11 @@
 
 import React from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePrivy } from '@privy-io/react-auth';
 import UserMenu from '../components/UserMenu';
 import Chat from '../components/Chat';
 import Logo from '../image/logo.png';
+import { SpinningLogo } from '../components/SpinningLogo';
 
 export default function Home() {
   const { login, authenticated } = usePrivy();
@@ -16,7 +16,12 @@ export default function Home() {
       {/* HEADER CONTAINER: full width, aligns logo left and menu right at same height */}
       <div className="absolute top-8 left-0 right-0 flex items-center justify-between px-8 z-50">
         <Link href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-          <Image src={Logo} alt="Altair logo" className="h-20 w-auto" priority />
+          <SpinningLogo
+            src={Logo}
+            alt="Altair logo"
+            className="h-20 w-auto"
+            priority
+          />
         </Link>
         <UserMenu />
       </div>
@@ -24,7 +29,7 @@ export default function Home() {
       {/* Content Container */}
       <div className="w-full flex flex-col items-center gap-8">
         <div className="flex items-center gap-4">
-          <Image src={Logo} alt="Altair logo" className="h-23 w-auto" />
+          <SpinningLogo src={Logo} alt="Altair logo" className="h-23 w-auto" />
           <div className="text-left">
             <h1 className="text-5xl font-extrabold mb-2 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
               Altair
