@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createPublicClient, http, formatEther, formatUnits } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { getPrivySmartWalletAddress } from '@/lib/privy';
+import { cookies } from 'next/headers';
 
 const USDC_ABI = [
   {
@@ -22,20 +23,40 @@ const USDC_ABI = [
 
 export async function POST(req: Request) {
   try {
-    const { accessToken } = await req.json();
+    const { walletAddress: overrideAddress } = await req.json().catch(() => ({ walletAddress: undefined }));
 
-    if (!accessToken) {
-      return NextResponse.json({ error: 'Missing access token' }, { status: 401 });
+    // Try to get the signed Privy ID token from cookie (HTTP-only)
+    const cookieStore = await cookies();
+    const idToken = cookieStore.get('privy-id-token')?.value;
+
+    // Resolve address: prefer explicit override, then Privy ID token, then env fallback
+    let resolvedAddress: string | null = overrideAddress ?? null;
+
+    if (!resolvedAddress && idToken) {
+      try {
+        const walletAddress = await getPrivySmartWalletAddress(idToken);
+        resolvedAddress = walletAddress;
+      } catch (e) {
+        console.warn('Privy ID token verification failed, falling back to env override if present:', e);
+      }
     }
 
-    const walletAddress = await getPrivySmartWalletAddress(accessToken);
+    if (!resolvedAddress) {
+      resolvedAddress = process.env.USER_WALLET_FALLBACK ?? process.env.ZEROG_BASE_ADDRESS ?? null;
+    }
+
+    if (!resolvedAddress) {
+      return NextResponse.json({ error: 'Unable to resolve wallet address' }, { status: 401 });
+    }
+
+    const addressToQuery = resolvedAddress as `0x${string}`;
 
     const client = createPublicClient({
       chain: baseSepolia,
       transport: http(process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org'),
     });
 
-    const ethBalanceRaw = await client.getBalance({ address: walletAddress as `0x${string}` });
+    const ethBalanceRaw = await client.getBalance({ address: addressToQuery });
     const eth = formatEther(ethBalanceRaw);
     let usdc = '0';
 
@@ -52,7 +73,7 @@ export async function POST(req: Request) {
             address: usdcAddress as `0x${string}`,
             abi: USDC_ABI,
             functionName: 'balanceOf',
-            args: [walletAddress as `0x${string}`],
+            args: [addressToQuery],
           }),
         ]);
 
@@ -64,7 +85,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({
-      address: walletAddress,
+      address: addressToQuery,
       eth,
       usdc,
     });

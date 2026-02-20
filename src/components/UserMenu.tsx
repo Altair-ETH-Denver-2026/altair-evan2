@@ -33,6 +33,7 @@ export default function UserMenu() {
     fetch('/api/balances', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ accessToken: token }),
       signal: controller.signal,
     })
@@ -68,12 +69,26 @@ export default function UserMenu() {
           <div className="absolute right-0 mt-3 w-48 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] overflow-hidden flex flex-col">
             <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300">
               <span className="flex-1">ETH</span>
-              <span className="text-gray-100">0</span>
+              <span
+                className="text-gray-100 px-3 text-center whitespace-nowrap hover:whitespace-normal"
+                title={ethBalance}
+              >
+                {Number.isNaN(Number(ethBalance))
+                  ? ethBalance
+                  : Number(ethBalance).toFixed(8)}
+              </span>
             </div>
             <div className="h-[1px] bg-gray-700 w-full" />
             <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300">
               <span className="flex-1">USDC</span>
-              <span className="text-gray-100">0</span>
+              <span
+                className="text-gray-100 px-3 text-center whitespace-nowrap hover:whitespace-normal"
+                title={usdcBalance}
+              >
+                {Number.isNaN(Number(usdcBalance))
+                  ? usdcBalance
+                  : Number(usdcBalance).toFixed(8)}
+              </span>
             </div>
           </div>
         )}
