@@ -4,9 +4,15 @@ import { PrivyProvider } from '@privy-io/react-auth';
 import { base } from 'viem/chains';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? process.env.PRIVY_APP_ID;
+
+  if (!appId) {
+    throw new Error('Missing NEXT_PUBLIC_PRIVY_APP_ID (or PRIVY_APP_ID) environment variable');
+  }
+
   return (
     <PrivyProvider
-      appId={'cmlspyaq0000p0dii61ggr5qr'}
+      appId={appId}
       config={{
         appearance: {
           theme: 'dark',
@@ -14,9 +20,6 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           showWalletLoginFirst: false,
         },
         // This is key: it creates a wallet for email/google users automatically
-        embeddedWallets: {
-          createOnLogin: 'users-without-wallets',
-        },
         defaultChain: base,
         supportedChains: [base],
       }}
