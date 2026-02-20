@@ -25,31 +25,16 @@ export async function POST(req: Request) {
   try {
     const { walletAddress: overrideAddress } = await req.json().catch(() => ({ walletAddress: undefined }));
 
-    // Try to get the signed Privy ID token from cookie (HTTP-only)
+    // Prefer signed Privy token from cookie; fallback to override only
     const cookieStore = await cookies();
-    const idToken = cookieStore.get('privy-id-token')?.value;
+    const cookieToken = cookieStore.get('privy-token')?.value;
 
-    // Resolve address: prefer explicit override, then Privy ID token, then env fallback
-    let resolvedAddress: string | null = overrideAddress ?? null;
+    const addressToQuery = (overrideAddress
+      ?? (cookieToken ? await getPrivySmartWalletAddress(cookieToken) : null)) as `0x${string}` | null;
 
-    if (!resolvedAddress && idToken) {
-      try {
-        const walletAddress = await getPrivySmartWalletAddress(idToken);
-        resolvedAddress = walletAddress;
-      } catch (e) {
-        console.warn('Privy ID token verification failed, falling back to env override if present:', e);
-      }
-    }
-
-    if (!resolvedAddress) {
-      resolvedAddress = process.env.USER_WALLET_FALLBACK ?? process.env.ZEROG_BASE_ADDRESS ?? null;
-    }
-
-    if (!resolvedAddress) {
+    if (!addressToQuery) {
       return NextResponse.json({ error: 'Unable to resolve wallet address' }, { status: 401 });
     }
-
-    const addressToQuery = resolvedAddress as `0x${string}`;
 
     const client = createPublicClient({
       chain: baseSepolia,
@@ -83,6 +68,8 @@ export async function POST(req: Request) {
         usdc = '0';
       }
     }
+
+    console.log('addressToQuery', addressToQuery);
 
     return NextResponse.json({
       address: addressToQuery,

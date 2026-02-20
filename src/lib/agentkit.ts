@@ -23,7 +23,7 @@ export async function initAgentKit({ baseRpcUrl, accessToken }: InitAgentKitPara
     appSecret: process.env.PRIVY_APP_SECRET ?? '',
     chainId: '84532',
     rpcUrl: baseRpcUrl,
-    // NOTE: Privy server-wallet provider does not take the smart wallet address directly; keeping resolved address for future delegated flows
+    walletId: smartWalletAddress,
   });
 
   const agentKit = await AgentKit.from({

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { UserRound, LogOut, Settings, Wallet } from 'lucide-react';
+import { UserRound, LogOut, Settings, Wallet, Wrench } from 'lucide-react';
 import { useEffect as useClientEffect, useState as useClientState } from 'react';
 import { BALANCE_DECIMALS } from '../../config';
 
@@ -10,6 +10,7 @@ export default function UserMenu() {
   const { logout, authenticated } = usePrivy();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [isDevOpen, setIsDevOpen] = useState(false);
   const [ethBalance, setEthBalance] = useClientState<string>('0');
   const [usdcBalance, setUsdcBalance] = useClientState<string>('0');
   const menuRef = useRef<HTMLDivElement>(null);
@@ -19,6 +20,7 @@ export default function UserMenu() {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsProfileOpen(false);
         setIsWalletOpen(false);
+        setIsDevOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -55,12 +57,53 @@ export default function UserMenu() {
 
   return (
     <div className="relative flex items-center gap-3" ref={menuRef}>
+      {/* Dev tools dropdown */}
+      <div className="relative">
+        <button
+          onClick={() => {
+            setIsDevOpen(!isDevOpen);
+            setIsWalletOpen(false);
+            setIsProfileOpen(false);
+          }}
+          className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all shadow-md"
+        >
+          <Wrench className="w-6 h-6 text-gray-300" />
+        </button>
+        {isDevOpen && (
+          <div className="absolute right-0 mt-3 w-48 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] overflow-hidden flex flex-col">
+            <button
+              onClick={async () => {
+                const token = typeof window !== 'undefined' ? localStorage.getItem('privy:token') : null;
+                await fetch('/api/test-swap', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify({ accessToken: token }),
+                }).catch(() => {});
+                setIsDevOpen(false);
+              }}
+              className="flex w-full items-center px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 transition-colors text-left"
+            >
+              <span className="flex-1">Test Swap: 0.00001 ETH</span>
+            </button>
+            <div className="h-[1px] bg-gray-700 w-full" />
+            <button
+              onClick={() => setIsDevOpen(false)}
+              className="flex w-full items-center px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 transition-colors text-left"
+            >
+              <span className="flex-1">Test Withdraw</span>
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Wallet dropdown */}
       <div className="relative">
         <button
           onClick={() => {
             setIsWalletOpen(!isWalletOpen);
             setIsProfileOpen(false);
+            setIsDevOpen(false);
           }}
           className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all shadow-md"
         >

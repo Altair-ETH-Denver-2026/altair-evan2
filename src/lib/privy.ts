@@ -2,6 +2,7 @@ import { PrivyClient, type LinkedAccountWithMetadata } from '@privy-io/server-au
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? process.env.PRIVY_APP_ID;
 const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET;
+const PRIVY_VERIFICATION_KEY = process.env.PRIVY_VERIFICATION_KEY;
 
 if (!PRIVY_APP_ID) {
   throw new Error('Missing NEXT_PUBLIC_PRIVY_APP_ID (or PRIVY_APP_ID) environment variable');
@@ -24,8 +25,11 @@ export async function getPrivySmartWalletAddress(accessToken: string): Promise<s
   }
 
   // Validate the token and extract the user id
-  const claims = await privy.verifyAuthToken(accessToken);
+  console.log('[Privy] Verifying auth token; length:', accessToken?.length ?? 0);
+  const claims = await privy.verifyAuthToken(accessToken, PRIVY_VERIFICATION_KEY);
+  console.log('[Privy] Token verified. userId:', claims.userId, 'issuer:', claims.issuer, 'aud:', claims.appId);
   const user = await privy.getUserById(claims.userId);
+  console.log('[Privy] Fetched user. linkedAccounts:', user.linkedAccounts?.length ?? 0, 'smartWallet:', user.smartWallet?.address);
 
   const smartWalletAddress =
     user.smartWallet?.address ||
@@ -34,11 +38,24 @@ export async function getPrivySmartWalletAddress(accessToken: string): Promise<s
       | (LinkedAccountWithMetadata & { address?: string })
       | undefined)?.address;
 
-  if (!smartWalletAddress) {
-    throw new Error('No Privy smart wallet found for user');
+  if (smartWalletAddress) {
+    console.log('smartWalletAddress', smartWalletAddress);
+    return smartWalletAddress;
   }
 
-  return smartWalletAddress;
+  // Try wallet API to fetch smart wallet if not present on user
+  try {
+    const wallets = await privy.walletApi.getWallets({ chainType: 'ethereum' });
+    const existing = wallets.data?.find((w) => w.address)?.address;
+    if (existing) {
+      console.log('[Privy] walletApi.getWallets returned:', existing);
+      return existing;
+    }
+  } catch (e) {
+    console.warn('[Privy] walletApi.getWallets failed:', e);
+  }
+
+  throw new Error('No Privy smart wallet found for user');
 }
 
 export type PrivyWalletContext = {
