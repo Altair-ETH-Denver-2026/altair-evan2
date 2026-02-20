@@ -1,29 +1,38 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
 import { usePrivy } from '@privy-io/react-auth';
 import UserMenu from '../components/UserMenu';
 import Chat from '../components/Chat';
+import Logo from '../image/logo.png';
 
 export default function Home() {
   const { login, authenticated } = usePrivy();
 
   return (
     <main className="relative min-h-screen w-full bg-black text-white flex flex-col items-center justify-center p-8">
-      {/* HEADER CONTAINER: full width, aligns items to the right */}
-      <div className="absolute top-8 left-0 right-0 flex justify-end pr-8 z-50">
+      {/* HEADER CONTAINER: full width, aligns logo left and menu right at same height */}
+      <div className="absolute top-8 left-0 right-0 flex items-center justify-between px-8 z-50">
+        <Link href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
+          <Image src={Logo} alt="Altair logo" className="h-20 w-auto" priority />
+        </Link>
         <UserMenu />
       </div>
 
       {/* Content Container */}
       <div className="w-full flex flex-col items-center gap-8">
-        <div className="text-center">
-          <h1 className="text-5xl font-extrabold mb-4 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
-            Altair
-          </h1>
-          <p className="text-gray-400 font-medium italic">
-            {authenticated ? "How can I help you today?" : "Your concierge for DeFi on Base."}
-          </p>
+        <div className="flex items-center gap-4">
+          <Image src={Logo} alt="Altair logo" className="h-23 w-auto" />
+          <div className="text-left">
+            <h1 className="text-5xl font-extrabold mb-2 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
+              Altair
+            </h1>
+            <p className="text-gray-400 font-medium italic">
+              {authenticated ? "Your crypto trading assistant." : "Your concierge for DeFi on Base."}
+            </p>
+          </div>
         </div>
 
         {authenticated ? (

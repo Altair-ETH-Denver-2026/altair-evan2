@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import Image from 'next/image';
 import { ShieldCheck, Send, Loader2 } from 'lucide-react';
+import Logo from '../image/logo.png';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -37,7 +39,9 @@ export default function Chat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage,
-          history: messages.map(m => ({ role: m.role, content: m.content }))
+          history: messages.map(m => ({ role: m.role, content: m.content })),
+          // Include Privy access token if available in localStorage (Privy stores it for the session)
+          accessToken: localStorage.getItem('privy:token') ?? null,
         }),
       });
 
@@ -64,33 +68,47 @@ export default function Chat() {
           <p className="text-gray-500 text-center mt-20">Ask me to swap ETH for USDC or check your balance...</p>
         )}
         {messages.map((m, i) => (
-          <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-            <div className={`max-w-[85%] px-4 py-2 rounded-2xl text-sm ${
-              m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-200'
-            }`}>
-              {m.content}
+          m.role === 'assistant' ? (
+            <div key={i} className="flex items-start gap-3">
+              <div className="shrink-0 h-10 w-10 rounded-full bg-white/5 border border-gray-700 flex items-center justify-center overflow-hidden">
+                <Image src={Logo} alt="Altair" className="h-9 w-9 object-contain" />
+              </div>
+              <div className="flex flex-col items-start">
+                <div className="max-w-[85%] px-4 py-2 rounded-2xl text-sm bg-gray-800 text-gray-200">
+                  {m.content}
+                </div>
+                {m.zgHash && !m.zgError && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <a 
+                      href={`https://scan-testnet.0g.ai/tx/${m.zgHash}`} 
+                      target="_blank"
+                      className="flex items-center gap-1 text-[10px] text-green-500 hover:underline"
+                    >
+                      <ShieldCheck className="w-3 h-3" />
+                      Verified by 0g
+                    </a>
+                  </div>
+                )}
+                {m.zgError && (
+                  <div className="flex items-center gap-2 mt-1 text-[10px] text-yellow-400">
+                    0G upload failed
+                  </div>
+                )}
+              </div>
             </div>
-            {m.zgHash && !m.zgError && (
-              <div className="flex items-center gap-2 mt-1">
-                <a 
-                  href={`https://scan-testnet.0g.ai/tx/${m.zgHash}`} 
-                  target="_blank"
-                  className="flex items-center gap-1 text-[10px] text-green-500 hover:underline"
-                >
-                  <ShieldCheck className="w-3 h-3" />
-                  Verified by 0g
-                </a>
+          ) : (
+            <div key={i} className="flex flex-col items-end">
+              <div className="max-w-[85%] px-4 py-2 rounded-2xl text-sm bg-blue-600 text-white">
+                {m.content}
               </div>
-            )}
-            {m.zgError && (
-              <div className="flex items-center gap-2 mt-1 text-[10px] text-yellow-400">
-                0G upload failed
-              </div>
-            )}
-          </div>
+            </div>
+          )
         ))}
         {isLoading && (
-          <div className="flex justify-start">
+          <div className="flex items-start gap-3">
+            <div className="shrink-0 h-10 w-10 rounded-full bg-white/5 border border-gray-700 flex items-center justify-center overflow-hidden">
+              <Image src={Logo} alt="Altair" className="h-9 w-9 object-contain" />
+            </div>
             <div className="bg-gray-800 p-3 rounded-2xl animate-pulse">
               <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
             </div>
