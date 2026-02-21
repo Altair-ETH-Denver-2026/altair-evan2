@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { archiveTo0g } from '@/lib/zg-storage';
-import { initAgentKit, executeSwap } from '@/lib/agentkit';
-import { ACTIVE_CHAIN } from '../../../../config';
 
 const openai = new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY 
@@ -31,37 +29,7 @@ export async function POST(req: Request) {
 
     const aiResponse = response.choices[0].message.content || "";
 
-    let executionNote: string | null = null;
-
-    // Attempt to execute swap intent using AgentKit + Privy smart wallet (only if JSON-like)
-    const trimmed = aiResponse.trim();
-    const looksLikeJson = trimmed.startsWith('{') && trimmed.endsWith('}');
-    if (looksLikeJson) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed?.type === 'SWAP_INTENT') {
-          if (!accessToken) {
-            throw new Error('Missing Privy access token');
-          }
-
-          const agentKit = await initAgentKit({
-            baseRpcUrl: ACTIVE_CHAIN.rpcUrl,
-            accessToken,
-          });
-
-          await executeSwap(agentKit, {
-            sellToken: parsed.sell,
-            buyToken: parsed.buy,
-            amount: parsed.amount,
-          });
-
-          executionNote = `Swap submitted: ${parsed.amount} ${parsed.sell} -> ${parsed.buy} on Base Sepolia.`;
-        }
-      } catch (intentErr) {
-        // If parsing fails, we just return the AI text; log server-side
-        console.warn('Swap intent parse/exec skipped:', intentErr);
-      }
-    }
+    const executionNote: string | null = null;
 
     // STEP 3: THE ARCHIVAL
     const archive = await archiveTo0g({

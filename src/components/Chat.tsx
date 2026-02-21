@@ -5,6 +5,9 @@ import Image from 'next/image';
 import { SpinningLogo } from './SpinningLogo';
 import { ShieldCheck, Send, Loader2 } from 'lucide-react';
 import Logo from '../image/logo.png';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { ethers } from 'ethers';
+import { BLOCKCHAIN, CHAINS } from '../../config';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -13,10 +16,20 @@ interface Message {
   zgError?: string | null;
 }
 
+interface SwapIntent {
+  type: 'SWAP_INTENT';
+  sell: string;
+  buy: string;
+  amount: number | string;
+}
+
 export default function Chat() {
+  const { authenticated } = usePrivy();
+  const { wallets } = useWallets();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isExecutingSwap, setIsExecutingSwap] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom
@@ -26,8 +39,80 @@ export default function Chat() {
     }
   }, [messages]);
 
+  const extractSwapIntent = (text: string): SwapIntent | null => {
+    const trimmed = text.trim();
+    const parseCandidate = (candidate: string) => {
+      try {
+        return JSON.parse(candidate) as SwapIntent;
+      } catch {
+        return null;
+      }
+    };
+
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      return parseCandidate(trimmed);
+    }
+
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      return parseCandidate(trimmed.slice(firstBrace, lastBrace + 1));
+    }
+
+    return null;
+  };
+
+  const executeEthToWethSwap = async (amountEth: string) => {
+    if (!authenticated || !wallets?.length) {
+      throw new Error('No authenticated wallet available.');
+    }
+
+    const chainConfig = CHAINS[BLOCKCHAIN];
+    if (!chainConfig) {
+      throw new Error('Unsupported chain configuration.');
+    }
+
+    const wallet = wallets[0];
+    const ethereumProvider = await wallet.getEthereumProvider();
+    const provider = new ethers.providers.Web3Provider(ethereumProvider, chainConfig.chainId);
+    await provider.ready;
+    const signer = provider.getSigner();
+
+    const amountWei = ethers.utils.parseEther(amountEth);
+    const wethContract = new ethers.Contract(
+      chainConfig.weth,
+      ['function deposit() payable'],
+      signer,
+    );
+
+    const tx = await wethContract.deposit({ value: amountWei });
+    await tx.wait();
+    return tx.hash as string;
+  };
+
+  const maybeExecuteSwapIntent = async (aiResponse: string) => {
+    const intent = extractSwapIntent(aiResponse);
+    if (!intent || intent.type !== 'SWAP_INTENT') return null;
+
+    const sell = intent.sell?.toUpperCase();
+    const buy = intent.buy?.toUpperCase();
+    const amount = typeof intent.amount === 'number' ? intent.amount.toString() : intent.amount;
+
+    if (sell !== 'ETH' || buy !== 'WETH' || !amount || Number(amount) <= 0) {
+      return null;
+    }
+
+    setIsExecutingSwap(true);
+    try {
+      const txHash = await executeEthToWethSwap(amount);
+      return `Swap executed: wrapped ${amount} ETH into WETH. Tx: ${txHash}`;
+    } finally {
+      setIsExecutingSwap(false);
+    }
+  };
+
   const handleSendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || isExecutingSwap) return;
 
     const userMessage = input;
     setInput('');
@@ -48,12 +133,24 @@ export default function Chat() {
 
       const data = await response.json();
       
-      setMessages((prev) => [...prev, { 
-        role: 'assistant', 
-        content: data.content,
-        zgHash: data.zgHash,
-        zgError: data.zgError,
-      }]);
+      const executionNote = await maybeExecuteSwapIntent(data.content);
+      setMessages((prev) => {
+        const next: Message[] = [
+          ...prev,
+          {
+            role: 'assistant',
+            content: data.content,
+            zgHash: data.zgHash,
+            zgError: data.zgError,
+          },
+        ];
+
+        if (executionNote) {
+          next.push({ role: 'assistant', content: executionNote });
+        }
+
+        return next;
+      });
     } catch (error) {
       console.error("Chat error:", error);
     } finally {
@@ -128,7 +225,7 @@ export default function Chat() {
         />
         <button 
           onClick={handleSendMessage}
-          disabled={isLoading}
+          disabled={isLoading || isExecutingSwap}
           className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 p-2 rounded-xl transition-all cursor-pointer"
         >
           <Send className="w-5 h-5" />

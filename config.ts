@@ -13,8 +13,8 @@ export const BASE_SEPOLIA = {
 export const ETH_SEPOLIA = {
   chainId: 11155111,
   rpcUrl: process.env.ETH_SEPOLIA_RPC_URL ?? 'https://rpc.sepolia.org',
-  weth: '0xDD13E55209Fd76AfE204dBda4007C227904f0a81',
-  usdc: process.env.USDC_CONTRACT_ETH_SEPOLIA ?? '',
+  weth: '0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9',
+  usdc: process.env.USDC_CONTRACT_ETH_SEPOLIA ?? '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
 };
 
 export const ETH_MAINNET = {
