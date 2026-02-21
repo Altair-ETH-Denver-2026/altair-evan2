@@ -5,9 +5,8 @@ import Image from 'next/image';
 import { SpinningLogo } from './SpinningLogo';
 import { ShieldCheck, Send, Loader2 } from 'lucide-react';
 import Logo from '../image/logo.png';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { ethers } from 'ethers';
-import { BLOCKCHAIN, CHAINS } from '../../config';
+import { usePrivy } from '@privy-io/react-auth';
+import { useSwap } from '../lib/useSwap';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -25,7 +24,7 @@ interface SwapIntent {
 
 export default function Chat() {
   const { authenticated } = usePrivy();
-  const { wallets } = useWallets();
+  const executeSwap = useSwap();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -62,33 +61,6 @@ export default function Chat() {
     return null;
   };
 
-  const executeEthToWethSwap = async (amountEth: string) => {
-    if (!authenticated || !wallets?.length) {
-      throw new Error('No authenticated wallet available.');
-    }
-
-    const chainConfig = CHAINS[BLOCKCHAIN];
-    if (!chainConfig) {
-      throw new Error('Unsupported chain configuration.');
-    }
-
-    const wallet = wallets[0];
-    const ethereumProvider = await wallet.getEthereumProvider();
-    const provider = new ethers.providers.Web3Provider(ethereumProvider, chainConfig.chainId);
-    await provider.ready;
-    const signer = provider.getSigner();
-
-    const amountWei = ethers.utils.parseEther(amountEth);
-    const wethContract = new ethers.Contract(
-      chainConfig.weth,
-      ['function deposit() payable'],
-      signer,
-    );
-
-    const tx = await wethContract.deposit({ value: amountWei });
-    await tx.wait();
-    return tx.hash as string;
-  };
 
   const maybeExecuteSwapIntent = async (aiResponse: string) => {
     const intent = extractSwapIntent(aiResponse);
@@ -98,14 +70,23 @@ export default function Chat() {
     const buy = intent.buy?.toUpperCase();
     const amount = typeof intent.amount === 'number' ? intent.amount.toString() : intent.amount;
 
-    if (sell !== 'ETH' || buy !== 'WETH' || !amount || Number(amount) <= 0) {
+    if (!amount || Number(amount) <= 0) {
       return null;
     }
 
     setIsExecutingSwap(true);
     try {
-      const txHash = await executeEthToWethSwap(amount);
-      return `Swap executed: wrapped ${amount} ETH into WETH. Tx: ${txHash}`;
+      if (sell === 'ETH' && buy === 'WETH') {
+        const txHash = await executeSwap(sell, amount, buy);
+        return `Swap executed: wrapped ${amount} ETH into WETH.\n${txHash}`;
+      }
+
+      if (sell === 'ETH' && buy === 'USDC') {
+        const txHash = await executeSwap(sell, amount, buy);
+        return `Swap executed: swapped ${amount} ETH for USDC.\n${txHash}`;
+      }
+
+      return null;
     } finally {
       setIsExecutingSwap(false);
     }
@@ -134,8 +115,16 @@ export default function Chat() {
       const data = await response.json();
       
       const executionNote = await maybeExecuteSwapIntent(data.content);
+      if (executionNote) {
+        console.log('[Swap Intent]', data.content);
+      }
+
       setMessages((prev) => {
-        const next: Message[] = [
+        if (executionNote) {
+          return [...prev, { role: 'assistant', content: executionNote }];
+        }
+
+        return [
           ...prev,
           {
             role: 'assistant',
@@ -144,12 +133,6 @@ export default function Chat() {
             zgError: data.zgError,
           },
         ];
-
-        if (executionNote) {
-          next.push({ role: 'assistant', content: executionNote });
-        }
-
-        return next;
       });
     } catch (error) {
       console.error("Chat error:", error);
@@ -172,7 +155,7 @@ export default function Chat() {
                 <SpinningLogo src={Logo} alt="Altair" className="h-9 w-9 object-contain" />
               </div>
               <div className="flex flex-col items-start">
-                <div className="max-w-[85%] px-4 py-2 rounded-2xl text-sm bg-gray-800 text-gray-200">
+                <div className="max-w-[85%] px-4 py-2 rounded-2xl text-sm bg-gray-800 text-gray-200 whitespace-pre-wrap break-words">
                   {m.content}
                 </div>
                 {m.zgHash && !m.zgError && (
@@ -196,7 +179,7 @@ export default function Chat() {
             </div>
           ) : (
             <div key={i} className="flex flex-col items-end">
-              <div className="max-w-[85%] px-4 py-2 rounded-2xl text-sm bg-blue-600 text-white">
+              <div className="max-w-[85%] px-4 py-2 rounded-2xl text-sm bg-blue-600 text-white whitespace-pre-wrap break-words">
                 {m.content}
               </div>
             </div>

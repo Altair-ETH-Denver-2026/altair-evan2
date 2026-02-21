@@ -11,9 +11,14 @@ export async function POST(req: Request) {
     const { message, history, accessToken } = await req.json();
 
     const systemPrompt = `
-      You are Altair, a DeFi concierge on the Base network. 
+      You are Altair, a DeFi concierge on the Base network.
       Identify: Sell Token, Buy Token, and Amount.
-      If info is missing, ask. If ready, return JSON:
+      If info is missing, ask.
+
+      If you are ready to execute, ask the user for confirmation and include an estimated amount of the buy token they would receive (label it as an estimate). Example:
+      "You are about to swap 0.1 ETH for USDC. Estimated receive: ~180 USDC. Do you confirm?"
+
+      If you only need to signal execution to the app, return JSON:
       { "type": "SWAP_INTENT", "sell": "ETH", "buy": "USDC", "amount": 0.1 }
     `;
 

@@ -1,27 +1,35 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { ethers } from 'ethers';
+import { usePrivy } from '@privy-io/react-auth';
+import { useSwap } from '../lib/useSwap';
 import { UserRound, LogOut, Settings, Wallet, Wrench, Copy, Globe2, Check } from 'lucide-react';
 import { useEffect as useClientEffect, useState as useClientState } from 'react';
 import { BALANCE_DECIMALS, BLOCKCHAIN, CHAINS, type ChainKey } from '../../config';
 
 export default function UserMenu() {
   const { logout, authenticated } = usePrivy();
-  const { wallets } = useWallets();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [isDevOpen, setIsDevOpen] = useState(false);
   const [isSwapping, setIsSwapping] = useState(false);
+  const [swapMessage, setSwapMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [ethBalance, setEthBalance] = useClientState<string>('0');
   const [usdcBalance, setUsdcBalance] = useClientState<string>('0');
   const [evmAddress, setEvmAddress] = useClientState<string>('');
   const [isNetworkOpen, setIsNetworkOpen] = useState(false);
   const [selectedChain, setSelectedChain] = useState<ChainKey>(BLOCKCHAIN);
+  const executeSwap = useSwap(selectedChain);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedChain = localStorage.getItem('selectedChain');
+      if (storedChain && storedChain in CHAINS) {
+        setSelectedChain(storedChain as ChainKey);
+      }
+    }
+
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsProfileOpen(false);
@@ -75,103 +83,26 @@ export default function UserMenu() {
 
   if (!authenticated) return null;
 
-  const handleTestSwap = async (buyToken: 'USDC' | 'WETH') => {
-    if (!wallets?.length) {
-      console.warn('[Test Swap] No Privy wallets available');
-      return;
-    }
-
-    const chainConfig = CHAINS[selectedChain];
-    if (!chainConfig) {
-      console.warn('[Test Swap] Unsupported chain selection:', selectedChain);
-      return;
-    }
-
-    const wallet = wallets[0];
-    setIsSwapping(true);
-
-    try {
-      const ethereumProvider = await wallet.getEthereumProvider();
-      const targetChainId = `0x${chainConfig.chainId.toString(16)}`;
-      if (ethereumProvider?.request) {
-        await ethereumProvider.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: targetChainId }],
-        });
-      }
-
-      const provider = new ethers.providers.Web3Provider(ethereumProvider, chainConfig.chainId);
-      await provider.ready;
-      const signer = provider.getSigner();
-      const recipient = await signer.getAddress();
-
-      const amountWei = ethers.utils.parseEther('0.000001');
-      const wethAddress = chainConfig.weth;
-
-      const wethContract = new ethers.Contract(
-        wethAddress,
-        ['function deposit() payable'],
-        signer,
-      );
-
-      await wethContract.deposit({ value: amountWei });
-
-      if (buyToken === 'WETH') {
-        console.log('[Test Swap] Wrapped ETH into WETH');
-        return;
-      }
-
-      const routeResponse = await fetch('/api/test-swap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          chain: selectedChain,
-          buyToken,
-          amount: amountWei.toString(),
-          recipient,
-        }),
-      });
-
-      if (!routeResponse.ok) {
-        const errorPayload = await routeResponse.json().catch(() => ({}));
-        throw new Error(errorPayload?.error ?? 'Failed to fetch swap route');
-      }
-
-      const routePayload = (await routeResponse.json()) as {
-        methodParameters?: { to: string; calldata: string; value: string };
-      };
-
-      if (!routePayload.methodParameters) {
-        throw new Error('No swap route found');
-      }
-
-      const wethApprove = new ethers.Contract(
-        wethAddress,
-        ['function approve(address,uint256)'],
-        signer,
-      );
-
-      await wethApprove.approve(routePayload.methodParameters.to, ethers.constants.MaxUint256);
-
-      const tx = await signer.sendTransaction({
-        to: routePayload.methodParameters.to,
-        data: routePayload.methodParameters.calldata,
-        value: routePayload.methodParameters.value,
-        gasLimit: ethers.utils.hexlify(1_000_000),
-      });
-
-      await tx.wait();
-      console.log('[Test Swap] Swap complete:', tx.hash);
-    } catch (error) {
-      console.error('[Test Swap] Swap failed:', error);
-    } finally {
-      setIsSwapping(false);
-    }
+  const showSwapMessage = (message: { type: 'success' | 'error'; text: string }) => {
+    setSwapMessage(message);
+    window.setTimeout(() => {
+      setSwapMessage((current) => (current === message ? null : current));
+    }, 6000);
   };
 
   return (
     <div className="relative flex items-center gap-3" ref={menuRef}>
+      {swapMessage && (
+        <div
+          className={`absolute right-0 top-12 z-[110] w-64 rounded-xl border px-4 py-3 text-xs shadow-2xl whitespace-pre-wrap break-words ${
+            swapMessage.type === 'success'
+              ? 'bg-emerald-900/90 border-emerald-700 text-emerald-100'
+              : 'bg-red-900/90 border-red-700 text-red-100'
+          }`}
+        >
+          {swapMessage.text}
+        </div>
+      )}
       {/* Dev tools dropdown */}
       <div className="relative">
         <button
@@ -190,8 +121,25 @@ export default function UserMenu() {
           <div className="absolute right-0 mt-3 w-48 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] overflow-hidden flex flex-col">
             <button
               onClick={async () => {
-                await handleTestSwap('USDC');
-                setIsDevOpen(false);
+                setIsSwapping(true);
+                try {
+                  const txHash = await executeSwap('ETH', '0.000001', 'USDC');
+                  console.log('[Test Swap] Swap complete:', txHash);
+                  showSwapMessage({
+                    type: 'success',
+                    text: `Swap complete.\n${txHash}`,
+                  });
+                } catch (error) {
+                  console.error('[Test Swap] Swap failed:', error);
+                  const message = error instanceof Error ? error.message : 'Swap failed';
+                  showSwapMessage({
+                    type: 'error',
+                    text: message,
+                  });
+                } finally {
+                  setIsSwapping(false);
+                  setIsDevOpen(false);
+                }
               }}
               disabled={isSwapping}
               className="flex w-full items-center px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 transition-colors text-left"
@@ -201,8 +149,25 @@ export default function UserMenu() {
             <div className="h-[1px] bg-gray-700 w-full" />
             <button
               onClick={async () => {
-                await handleTestSwap('WETH');
-                setIsDevOpen(false);
+                setIsSwapping(true);
+                try {
+                  const txHash = await executeSwap('ETH', '0.000001', 'WETH');
+                  console.log('[Test Swap] Swap complete:', txHash);
+                  showSwapMessage({
+                    type: 'success',
+                    text: `Swap complete.\n${txHash}`,
+                  });
+                } catch (error) {
+                  console.error('[Test Swap] Swap failed:', error);
+                  const message = error instanceof Error ? error.message : 'Swap failed';
+                  showSwapMessage({
+                    type: 'error',
+                    text: message,
+                  });
+                } finally {
+                  setIsSwapping(false);
+                  setIsDevOpen(false);
+                }
               }}
               disabled={isSwapping}
               className="flex w-full items-center px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 transition-colors text-left"
@@ -244,6 +209,9 @@ export default function UserMenu() {
                   return;
                 }
                 setSelectedChain(key);
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('selectedChain', key);
+                }
                 setIsNetworkOpen(false);
               };
               return (

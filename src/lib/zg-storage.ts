@@ -1,4 +1,4 @@
-import { JsonRpcProvider, Wallet } from 'ethers';
+import { ethers } from 'ethers';
 
 export type ArchiveResult = {
   txHash: string | null;
