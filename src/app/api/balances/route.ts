@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createPublicClient, http, formatEther, formatUnits } from 'viem';
 import { baseSepolia } from 'viem/chains';
+import { ACTIVE_CHAIN, CHAINS, type ChainKey } from '../../../../config';
 import { getPrivyEvmWalletAddress } from '@/lib/privy';
 import { cookies } from 'next/headers';
 
@@ -23,7 +24,12 @@ const USDC_ABI = [
 
 export async function POST(req: Request) {
   try {
-    const { walletAddress: overrideAddress } = await req.json().catch(() => ({ walletAddress: undefined }));
+    const { walletAddress: overrideAddress, chain: chainKey } = (await req
+      .json()
+      .catch(() => ({ walletAddress: undefined, chain: undefined }))) as {
+      walletAddress?: string;
+      chain?: ChainKey;
+    };
 
     // Prefer signed Privy token from cookie; fallback to override only
     const cookieStore = await cookies();
@@ -36,16 +42,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unable to resolve wallet address' }, { status: 401 });
     }
 
+    const chainConfig = chainKey && chainKey in CHAINS ? CHAINS[chainKey] : ACTIVE_CHAIN;
     const client = createPublicClient({
-      chain: baseSepolia,
-      transport: http(process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org'),
+      chain: {
+        ...baseSepolia,
+        id: chainConfig.chainId,
+        rpcUrls: { default: { http: [chainConfig.rpcUrl] }, public: { http: [chainConfig.rpcUrl] } },
+      },
+      transport: http(chainConfig.rpcUrl),
     });
 
     const ethBalanceRaw = await client.getBalance({ address: addressToQuery });
     const eth = formatEther(ethBalanceRaw);
     let usdc = '0';
 
-    const usdcAddress = process.env.USDC_CONTRACT_BASE_SEPOLIA;
+    const usdcAddress = chainConfig.usdc;
     if (usdcAddress) {
       try {
         const [decimals, usdcBalanceRaw] = await Promise.all([

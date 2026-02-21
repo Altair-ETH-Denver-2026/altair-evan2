@@ -2,9 +2,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { UserRound, LogOut, Settings, Wallet, Wrench, Copy } from 'lucide-react';
+import { UserRound, LogOut, Settings, Wallet, Wrench, Copy, Globe2, Check } from 'lucide-react';
 import { useEffect as useClientEffect, useState as useClientState } from 'react';
-import { BALANCE_DECIMALS } from '../../config';
+import { BALANCE_DECIMALS, BLOCKCHAIN, CHAINS, type ChainKey } from '../../config';
 
 export default function UserMenu() {
   const { logout, authenticated } = usePrivy();
@@ -14,6 +14,8 @@ export default function UserMenu() {
   const [ethBalance, setEthBalance] = useClientState<string>('0');
   const [usdcBalance, setUsdcBalance] = useClientState<string>('0');
   const [evmAddress, setEvmAddress] = useClientState<string>('');
+  const [isNetworkOpen, setIsNetworkOpen] = useState(false);
+  const [selectedChain, setSelectedChain] = useState<ChainKey>(BLOCKCHAIN);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -22,6 +24,7 @@ export default function UserMenu() {
         setIsProfileOpen(false);
         setIsWalletOpen(false);
         setIsDevOpen(false);
+        setIsNetworkOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -47,7 +50,7 @@ export default function UserMenu() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ accessToken: token }),
+          body: JSON.stringify({ accessToken: token, chain: selectedChain }),
           signal: controller.signal,
         });
 
@@ -65,7 +68,7 @@ export default function UserMenu() {
     run();
 
     return () => controller.abort();
-  }, [authenticated, setEthBalance, setUsdcBalance, setEvmAddress]);
+  }, [authenticated, selectedChain, setEthBalance, setUsdcBalance, setEvmAddress]);
 
   if (!authenticated) return null;
 
@@ -75,10 +78,11 @@ export default function UserMenu() {
       <div className="relative">
         <button
           onClick={() => {
-            setIsDevOpen(!isDevOpen);
-            setIsWalletOpen(false);
-            setIsProfileOpen(false);
-          }}
+        setIsDevOpen(!isDevOpen);
+        setIsWalletOpen(false);
+        setIsProfileOpen(false);
+        setIsNetworkOpen(false);
+      }}
           className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all shadow-md cursor-pointer"
         >
           <Wrench className="w-6 h-6 text-gray-300" />
@@ -111,6 +115,46 @@ export default function UserMenu() {
         )}
       </div>
 
+      {/* Network dropdown */}
+      <div className="relative">
+        <button
+          onClick={() => {
+            setIsNetworkOpen(!isNetworkOpen);
+            setIsWalletOpen(false);
+            setIsProfileOpen(false);
+            setIsDevOpen(false);
+          }}
+          className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all shadow-md cursor-pointer"
+        >
+          <Globe2 className="w-6 h-6 text-gray-300" />
+        </button>
+        {isNetworkOpen && (
+          <div className="absolute right-0 mt-3 w-48 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] overflow-hidden flex flex-col">
+            {[{ label: 'ETH Mainnet', key: 'ETH_MAINNET' as ChainKey }, { label: 'Sepolia Testnet', key: 'ETH_SEPOLIA' as ChainKey }, { label: 'Base Mainnet', key: 'BASE_MAINNET' as ChainKey }, { label: 'Base Testnet', key: 'BASE_SEPOLIA' as ChainKey }, { label: 'Solana Mainnet', key: null as ChainKey | null }].map(({ label, key }) => {
+              const isSelected = key ? selectedChain === key : false;
+              const handleClick = () => {
+                if (!key) {
+                  setIsNetworkOpen(false);
+                  return;
+                }
+                setSelectedChain(key);
+                setIsNetworkOpen(false);
+              };
+              return (
+                <button
+                  key={label}
+                  onClick={handleClick}
+                  className="flex w-full items-center px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 transition-colors text-left cursor-pointer"
+                >
+                  <span className="mr-3 w-4 flex justify-center">{isSelected ? <Check className="w-4 h-4 text-white" /> : null}</span>
+                  <span className="flex-1">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Wallet dropdown */}
       <div className="relative">
         <button
@@ -118,6 +162,7 @@ export default function UserMenu() {
             setIsWalletOpen(!isWalletOpen);
             setIsProfileOpen(false);
             setIsDevOpen(false);
+            setIsNetworkOpen(false);
           }}
           className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all shadow-md cursor-pointer"
         >

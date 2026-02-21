@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { archiveTo0g } from '@/lib/zg-storage';
 import { initAgentKit, executeSwap } from '@/lib/agentkit';
+import { ACTIVE_CHAIN } from '../../../../config';
 
 const openai = new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY 
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
           }
 
           const agentKit = await initAgentKit({
-            baseRpcUrl: process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org',
+            baseRpcUrl: ACTIVE_CHAIN.rpcUrl,
             accessToken,
           });
 

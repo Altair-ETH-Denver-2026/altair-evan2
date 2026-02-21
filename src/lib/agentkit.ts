@@ -4,8 +4,14 @@ import {
   walletActionProvider,
   erc20ActionProvider,
   zeroXActionProvider,
+  sushiRouterActionProvider,
 } from '@coinbase/agentkit';
+import { isAddress, parseEther } from 'viem';
 import { ensurePrivyEmbeddedEvmWallet } from './privy';
+import { ACTIVE_CHAIN } from '@/../config';
+
+const BASE_SEPOLIA_WETH = ACTIVE_CHAIN.weth;
+const BASE_SEPOLIA_USDC = ACTIVE_CHAIN.usdc;
 
 type InitAgentKitParams = {
   baseRpcUrl: string;
@@ -16,10 +22,6 @@ type InitAgentKitParams = {
  * Initialize AgentKit with the user's Privy smart wallet on Base Sepolia.
  */
 export async function initAgentKit({ baseRpcUrl, accessToken }: InitAgentKitParams) {
-  if (!process.env.CDP_API_KEY_NAME || !process.env.CDP_API_KEY_SECRET) {
-    throw new Error('Missing CDP_API_KEY_NAME or CDP_API_KEY_SECRET environment variables');
-  }
-
   // Resolve or create a Privy-controlled embedded EVM wallet (required for server signing)
   const { walletId } = await ensurePrivyEmbeddedEvmWallet(accessToken);
 
@@ -37,7 +39,9 @@ export async function initAgentKit({ baseRpcUrl, accessToken }: InitAgentKitPara
     actionProviders: [
       walletActionProvider(),
       erc20ActionProvider(),
-      zeroXActionProvider({ apiKey: process.env.UNISWAP_API_KEY }),
+      // Prefer Uniswap-compatible routing via Sushi router; fall back to 0x if needed
+      sushiRouterActionProvider(),
+      zeroXActionProvider({ apiKey: process.env.ZEROX_API_KEY ?? '' }),
     ],
   });
 
@@ -47,20 +51,61 @@ export async function initAgentKit({ baseRpcUrl, accessToken }: InitAgentKitPara
 export type SwapInput = {
   sellToken: string;
   buyToken: string;
-  amount: number;
+  amount: number | string;
 };
 
 /**
- * Execute a swap through the AgentKit actions (CDP-backed swap on Base Sepolia).
+ * Execute a swap through the AgentKit actions (0x-backed swap on Base Sepolia).
  */
 export async function executeSwap(agentKit: AgentKit, { sellToken, buyToken, amount }: SwapInput) {
-  // Try to find the CDP swap action explicitly
   const actions = agentKit.getActions();
-  const swap = actions.find((a) => a.name?.toLowerCase().includes('swap'));
+  console.log('[AgentKit] available actions:', actions.map((a) => a.name));
+
+  const preferredOrder = ['sushi', 'uniswap', 'uni', '0x', 'swap'];
+  const swap = actions.find((a) => {
+    const name = a.name?.toLowerCase() ?? '';
+    return preferredOrder.some((p) => name.includes(p));
+  });
+
   if (!swap || !swap.invoke) {
     throw new Error('Swap action not available');
   }
 
+  const name = swap.name?.toLowerCase() ?? '';
+
+  // If using 0x provider, conform to its schema (sellAmount as wei string)
+  if (name.includes('0x')) {
+    const normalizeToken = (token: string) => {
+      const t = token.toLowerCase();
+      if (t === 'eth') return 'ETH';
+      if (t === 'weth') return BASE_SEPOLIA_WETH;
+      if (t === 'usdc') return BASE_SEPOLIA_USDC;
+      return token;
+    };
+
+    const isNativeSell = sellToken.toLowerCase() === 'eth';
+    const sellTokenAddr = normalizeToken(sellToken);
+    const buyTokenAddr = normalizeToken(buyToken);
+
+    if (!isAddress(sellTokenAddr) || !isAddress(buyTokenAddr)) {
+      throw new Error(`Invalid token address for swap. sellToken=${sellTokenAddr}, buyToken=${buyTokenAddr}`);
+    }
+
+    const amountStr = typeof amount === 'string' ? amount : amount.toString();
+    const sellAmountWei = parseEther(amountStr).toString();
+    const result = await swap.invoke({
+      sellToken: sellTokenAddr,
+      buyToken: buyTokenAddr,
+      sellAmount: sellAmountWei,
+      slippageBps: 100, // 1%
+      swapFeeBps: 0,
+      // Allow native ETH input when sell token is ETH; the 0x provider handles wrapping internally
+      sourceToken: isNativeSell ? 'ETH' : undefined,
+    });
+    return result;
+  }
+
+  // Generic fallback (e.g., sushi/uniswap routers)
   const result = await swap.invoke({
     fromToken: sellToken,
     toToken: buyToken,
