@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createPublicClient, http, formatEther, formatUnits } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { getPrivySmartWalletAddress } from '@/lib/privy';
+import { getPrivyEvmWalletAddress } from '@/lib/privy';
 import { cookies } from 'next/headers';
 
 const USDC_ABI = [
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const cookieToken = cookieStore.get('privy-token')?.value;
 
     const addressToQuery = (overrideAddress
-      ?? (cookieToken ? await getPrivySmartWalletAddress(cookieToken) : null)) as `0x${string}` | null;
+      ?? (cookieToken ? await getPrivyEvmWalletAddress(cookieToken) : null)) as `0x${string}` | null;
 
     if (!addressToQuery) {
       return NextResponse.json({ error: 'Unable to resolve wallet address' }, { status: 401 });

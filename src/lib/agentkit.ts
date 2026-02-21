@@ -1,5 +1,11 @@
-import { AgentKit, PrivyWalletProvider } from '@coinbase/agentkit';
-import { getPrivySmartWalletAddress } from './privy';
+import {
+  AgentKit,
+  PrivyWalletProvider,
+  walletActionProvider,
+  erc20ActionProvider,
+  zeroXActionProvider,
+} from '@coinbase/agentkit';
+import { ensurePrivyEmbeddedEvmWallet } from './privy';
 
 type InitAgentKitParams = {
   baseRpcUrl: string;
@@ -14,8 +20,8 @@ export async function initAgentKit({ baseRpcUrl, accessToken }: InitAgentKitPara
     throw new Error('Missing CDP_API_KEY_NAME or CDP_API_KEY_SECRET environment variables');
   }
 
-  // Resolve the user's smart wallet (Base Sepolia) via Privy
-  const smartWalletAddress = await getPrivySmartWalletAddress(accessToken);
+  // Resolve or create a Privy-controlled embedded EVM wallet (required for server signing)
+  const { walletId } = await ensurePrivyEmbeddedEvmWallet(accessToken);
 
   // Configure a Privy-backed wallet provider (EVM server wallet on Base Sepolia)
   const walletProvider = await PrivyWalletProvider.configureWithWallet({
@@ -23,13 +29,16 @@ export async function initAgentKit({ baseRpcUrl, accessToken }: InitAgentKitPara
     appSecret: process.env.PRIVY_APP_SECRET ?? '',
     chainId: '84532',
     rpcUrl: baseRpcUrl,
-    walletId: smartWalletAddress,
+    walletId,
   });
 
   const agentKit = await AgentKit.from({
     walletProvider,
-    cdpApiKeyId: process.env.CDP_API_KEY_NAME,
-    cdpApiKeySecret: process.env.CDP_API_KEY_SECRET,
+    actionProviders: [
+      walletActionProvider(),
+      erc20ActionProvider(),
+      zeroXActionProvider({ apiKey: process.env.UNISWAP_API_KEY }),
+    ],
   });
 
   return agentKit;
@@ -45,6 +54,7 @@ export type SwapInput = {
  * Execute a swap through the AgentKit actions (CDP-backed swap on Base Sepolia).
  */
 export async function executeSwap(agentKit: AgentKit, { sellToken, buyToken, amount }: SwapInput) {
+  // Try to find the CDP swap action explicitly
   const actions = agentKit.getActions();
   const swap = actions.find((a) => a.name?.toLowerCase().includes('swap'));
   if (!swap || !swap.invoke) {
@@ -65,3 +75,4 @@ export async function executeSwap(agentKit: AgentKit, { sellToken, buyToken, amo
 
   return result;
 }
+

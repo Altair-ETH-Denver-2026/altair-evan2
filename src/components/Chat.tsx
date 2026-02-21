@@ -129,7 +129,7 @@ export default function Chat() {
         <button 
           onClick={handleSendMessage}
           disabled={isLoading}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 p-2 rounded-xl transition-all"
+          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 p-2 rounded-xl transition-all cursor-pointer"
         >
           <Send className="w-5 h-5" />
         </button>

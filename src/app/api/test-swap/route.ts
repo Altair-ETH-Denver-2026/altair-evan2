@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { initAgentKit, executeSwap } from '@/lib/agentkit';
-import { getPrivySmartWalletAddress } from '@/lib/privy';
+import { ensurePrivyEmbeddedEvmWallet } from '@/lib/privy';
 
 const ETH_TO_SWAP = 0.000001;
 
@@ -23,12 +23,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing Privy token' }, { status: 401 });
     }
 
-    // Resolve wallet address via Privy ID token (preferred) or request override
-    const walletAddress = overrideAddress ?? (tokenToVerify ? await getPrivySmartWalletAddress(tokenToVerify) : null);
-
-    if (!walletAddress) {
-      return NextResponse.json({ error: 'Missing wallet address/access token' }, { status: 400 });
-    }
+    // Resolve or create a Privy-controlled embedded EVM wallet (server-signable)
+    const { walletId, address: walletAddress } = await ensurePrivyEmbeddedEvmWallet(tokenToVerify);
 
     const agentKit = await initAgentKit({
       baseRpcUrl: process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org',
