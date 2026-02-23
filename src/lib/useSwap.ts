@@ -2,7 +2,26 @@
 
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
-import { BLOCKCHAIN, CHAINS, WRAP_ETH, type ChainKey } from '../../config';
+import { BLOCKCHAIN, CHAINS, WRAP_ETH, type ChainKey } from '../../config/blockchain_config';
+import { BASE_MAINNET, BASE_SEPOLIA, ETH_MAINNET, ETH_SEPOLIA, resolveRpcUrls } from '../../config/chain_info';
+import { WETH as BASE_WETH } from '../../config/token_info/base_tokens';
+import { WETH as BASE_SEPOLIA_WETH } from '../../config/token_info/base_testnet_sepolia_tokens';
+import { WETH as ETH_WETH } from '../../config/token_info/eth_tokens';
+import { WETH as ETH_SEPOLIA_WETH } from '../../config/token_info/eth_sepolia_testnet_tokens';
+
+const chainConfigs = {
+  BASE_SEPOLIA,
+  ETH_SEPOLIA,
+  ETH_MAINNET,
+  BASE_MAINNET,
+} as const;
+
+const tokenConfigs = {
+  BASE_SEPOLIA: { WETH: BASE_SEPOLIA_WETH },
+  ETH_SEPOLIA: { WETH: ETH_SEPOLIA_WETH },
+  ETH_MAINNET: { WETH: ETH_WETH },
+  BASE_MAINNET: { WETH: BASE_WETH },
+} as const;
 
 const resolveSelectedChain = (explicitChain?: ChainKey) => {
   if (explicitChain) return explicitChain;
@@ -16,7 +35,8 @@ const ensureEvmChain = async (
   ethereumProvider: ethers.providers.ExternalProvider,
   chainKey: ChainKey,
 ) => {
-  const chainConfig = CHAINS[chainKey];
+  const chainConfig = chainConfigs[chainKey];
+  const resolvedRpcUrls = resolveRpcUrls(chainConfig.rpcUrls);
   const targetChainId = `0x${chainConfig.chainId.toString(16)}`;
   const chainMeta: Record<ChainKey, { name: string; explorer: string }> = {
     ETH_MAINNET: { name: 'Ethereum Mainnet', explorer: 'https://etherscan.io' },
@@ -40,7 +60,7 @@ const ensureEvmChain = async (
             chainId: targetChainId,
             chainName: chainMeta[chainKey].name,
             nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-            rpcUrls: [chainConfig.rpcUrl],
+            rpcUrls: resolvedRpcUrls,
             blockExplorerUrls: [chainMeta[chainKey].explorer],
           },
         ],
@@ -61,7 +81,8 @@ export const useSwap = (explicitChain?: ChainKey) => {
     }
 
     const selectedChain = resolveSelectedChain(explicitChain);
-    const chainConfig = CHAINS[selectedChain];
+    const chainConfig = chainConfigs[selectedChain];
+    const tokenConfig = tokenConfigs[selectedChain];
     if (!chainConfig) {
       throw new Error('Unsupported chain configuration.');
     }
@@ -85,7 +106,7 @@ export const useSwap = (explicitChain?: ChainKey) => {
 
     if (WRAP_ETH && normalizedSell === 'ETH') {
       const weth = new ethers.Contract(
-        chainConfig.weth,
+        tokenConfig.WETH.address,
         ['function deposit() payable'],
         signer,
       );
@@ -128,7 +149,7 @@ export const useSwap = (explicitChain?: ChainKey) => {
 
     if (effectiveSell === 'WETH') {
       const wethApprove = new ethers.Contract(
-        chainConfig.weth,
+        tokenConfig.WETH.address,
         ['function approve(address,uint256)'],
         signer,
       );

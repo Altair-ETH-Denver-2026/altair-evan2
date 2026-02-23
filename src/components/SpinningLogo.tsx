@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Image, { type ImageProps } from 'next/image';
-import { LOGO_SPIN_MIN_MS, LOGO_SPIN_MAX_MS } from '../../config';
+import { LOGO_SPIN_MIN_MS, LOGO_SPIN_MAX_MS } from '../../config/ui_config';
 
 type SpinningLogoProps = Omit<ImageProps, 'style'> & {
   className?: string;

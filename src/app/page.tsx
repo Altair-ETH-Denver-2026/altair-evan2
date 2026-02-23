@@ -7,6 +7,7 @@ import UserMenu from '../components/UserMenu';
 import Chat from '../components/Chat';
 import Logo from '../image/logo.png';
 import { SpinningLogo } from '../components/SpinningLogo';
+import { HOME_ICON, MENU_ICONS } from '../../config/ui_config';
 
 export default function Home() {
   const { login, authenticated } = usePrivy();
@@ -14,15 +15,35 @@ export default function Home() {
   return (
     <main className="relative min-h-screen w-full bg-black text-white flex flex-col items-center justify-center p-8">
       {/* HEADER CONTAINER: full width, aligns logo left and menu right at same height */}
-      <div className="absolute top-8 left-0 right-0 flex items-center justify-between px-8 z-50">
+      <div
+        className="absolute z-50"
+        style={{
+          top: HOME_ICON.y_justify === 'top' ? `${HOME_ICON.y_offset * 4}px` : undefined,
+          bottom: HOME_ICON.y_justify === 'bottom' ? `${HOME_ICON.y_offset * 4}px` : undefined,
+          left: HOME_ICON.x_justify === 'left' ? `${HOME_ICON.x_offset * 4}px` : undefined,
+          right: HOME_ICON.x_justify === 'right' ? `${HOME_ICON.x_offset * 4}px` : undefined,
+        }}
+      >
         <Link href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-          <SpinningLogo
-            src={Logo}
-            alt="Altair logo"
-            className="h-20 w-auto"
-            priority
-          />
+          <div style={{ height: `${HOME_ICON.size * 4}px` }}>
+            <SpinningLogo
+              src={Logo}
+              alt="Altair logo"
+              className="h-full w-auto"
+              priority
+            />
+          </div>
         </Link>
+      </div>
+      <div
+        className="absolute z-50"
+        style={{
+          top: MENU_ICONS.y_justify === 'top' ? `${MENU_ICONS.y_offset * 4}px` : undefined,
+          bottom: MENU_ICONS.y_justify === 'bottom' ? `${MENU_ICONS.y_offset * 4}px` : undefined,
+          left: MENU_ICONS.x_justify === 'left' ? `${MENU_ICONS.x_offset * 4}px` : undefined,
+          right: MENU_ICONS.x_justify === 'right' ? `${MENU_ICONS.x_offset * 4}px` : undefined,
+        }}
+      >
         <UserMenu />
       </div>
 

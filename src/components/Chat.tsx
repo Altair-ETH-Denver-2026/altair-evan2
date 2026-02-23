@@ -7,6 +7,7 @@ import { ShieldCheck, Send, Loader2 } from 'lucide-react';
 import Logo from '../image/logo.png';
 import { usePrivy } from '@privy-io/react-auth';
 import { useSwap } from '../lib/useSwap';
+import { CHAT_PANEL } from '../../config/ui_config';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -142,7 +143,18 @@ export default function Chat() {
   };
 
   return (
-    <div className="w-full max-w-2xl bg-gray-900/50 border border-gray-800 rounded-2xl flex flex-col h-[500px] shadow-2xl backdrop-blur-sm">
+    <div
+      className="w-full rounded-2xl flex flex-col shadow-2xl backdrop-blur-sm"
+      style={{
+        backgroundColor: CHAT_PANEL.container_color,
+        borderColor: CHAT_PANEL.border_color,
+        borderWidth: `${CHAT_PANEL.border_width}px`,
+        borderStyle: 'solid',
+        boxSizing: 'content-box',
+        width: `${CHAT_PANEL.width}px`,
+        height: `${CHAT_PANEL.height}px`,
+      }}
+    >
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-hide">
         {messages.length === 0 && (
@@ -151,11 +163,20 @@ export default function Chat() {
         {messages.map((m, i) => (
           m.role === 'assistant' ? (
             <div key={i} className="flex items-start gap-3">
-              <div className="shrink-0 h-10 w-10 rounded-full bg-white/5 border border-gray-700 flex items-center justify-center overflow-hidden">
+                <div
+                  className="shrink-0 h-10 w-10 rounded-full bg-white/5 border flex items-center justify-center overflow-hidden"
+                  style={{ borderColor: CHAT_PANEL.agent_icon_border_color }}
+                >
                 <SpinningLogo src={Logo} alt="Altair" className="h-9 w-9 object-contain" />
               </div>
               <div className="flex flex-col items-start">
-                <div className="max-w-[85%] px-4 py-2 rounded-2xl text-sm bg-gray-800 text-gray-200 whitespace-pre-wrap break-words">
+                <div
+                  className="max-w-[85%] px-4 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words"
+                  style={{
+                    backgroundColor: CHAT_PANEL.agent_chat_container_color,
+                    color: CHAT_PANEL.agent_chat_text_color,
+                  }}
+                >
                   {m.content}
                 </div>
                 {m.zgHash && !m.zgError && (
@@ -179,7 +200,13 @@ export default function Chat() {
             </div>
           ) : (
             <div key={i} className="flex flex-col items-end">
-              <div className="max-w-[85%] px-4 py-2 rounded-2xl text-sm bg-blue-600 text-white whitespace-pre-wrap break-words">
+              <div
+                className="max-w-[85%] px-4 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words"
+                style={{
+                  backgroundColor: CHAT_PANEL.user_chat_container_color,
+                  color: CHAT_PANEL.user_chat_text_color,
+                }}
+              >
                 {m.content}
               </div>
             </div>

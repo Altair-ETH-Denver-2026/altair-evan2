@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import { AlphaRouter, SwapType } from '@uniswap/smart-order-router';
 import { CurrencyAmount, Ether, Percent, Token, TradeType } from '@uniswap/sdk-core';
 import { ethers } from 'ethers';
-import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../../../config';
+import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../../../config/blockchain_config';
+import { BASE_MAINNET, BASE_SEPOLIA, ETH_MAINNET, ETH_SEPOLIA, resolveRpcUrls } from '../../../../config/chain_info';
+import { USDC as BASE_USDC, WETH as BASE_WETH } from '../../../../config/token_info/base_tokens';
+import { USDC as BASE_SEPOLIA_USDC, WETH as BASE_SEPOLIA_WETH } from '../../../../config/token_info/base_testnet_sepolia_tokens';
+import { USDC as ETH_USDC, WETH as ETH_WETH } from '../../../../config/token_info/eth_tokens';
+import { USDC as ETH_SEPOLIA_USDC, WETH as ETH_SEPOLIA_WETH } from '../../../../config/token_info/eth_sepolia_testnet_tokens';
 
 export async function POST(req: Request) {
   try {
@@ -25,7 +30,22 @@ export async function POST(req: Request) {
     const resolvedChainKey: ChainKey =
       requestedChain && requestedChain in CHAINS ? requestedChain : (BLOCKCHAIN as ChainKey);
 
-    const chainConfig = CHAINS[resolvedChainKey];
+    const chainConfigs = {
+      BASE_SEPOLIA,
+      ETH_SEPOLIA,
+      ETH_MAINNET,
+      BASE_MAINNET,
+    } as const;
+
+    const chainConfig = chainConfigs[resolvedChainKey];
+    const tokenConfigs = {
+      BASE_SEPOLIA: { USDC: BASE_SEPOLIA_USDC, WETH: BASE_SEPOLIA_WETH },
+      ETH_SEPOLIA: { USDC: ETH_SEPOLIA_USDC, WETH: ETH_SEPOLIA_WETH },
+      ETH_MAINNET: { USDC: ETH_USDC, WETH: ETH_WETH },
+      BASE_MAINNET: { USDC: BASE_USDC, WETH: BASE_WETH },
+    } as const;
+
+    const tokenConfig = tokenConfigs[resolvedChainKey];
     if (!chainConfig) {
       return NextResponse.json({ error: 'Unsupported chain' }, { status: 400 });
     }
@@ -58,8 +78,9 @@ export async function POST(req: Request) {
       }
     })();
 
+    const primaryRpcUrls = resolveRpcUrls(chainConfig.rpcUrls);
     const provider = new ethers.providers.FallbackProvider(
-      [chainConfig.rpcUrl, ...fallbackUrls].map(
+      [...primaryRpcUrls, ...fallbackUrls].map(
         (rpcUrl) =>
           new ethers.providers.StaticJsonRpcProvider(rpcUrl, {
             chainId: chainConfig.chainId,
@@ -69,8 +90,20 @@ export async function POST(req: Request) {
       1,
     );
     const router = new AlphaRouter({ chainId: chainConfig.chainId, provider });
-    const WETH = new Token(chainConfig.chainId, chainConfig.weth, 18, 'WETH', 'Wrapped Ether');
-    const USDC = new Token(chainConfig.chainId, chainConfig.usdc, 6, 'USDC', 'USD Coin');
+    const WETH = new Token(
+      chainConfig.chainId,
+      tokenConfig.WETH.address,
+      18,
+      tokenConfig.WETH.symbol,
+      tokenConfig.WETH.name,
+    );
+    const USDC = new Token(
+      chainConfig.chainId,
+      tokenConfig.USDC.address,
+      6,
+      tokenConfig.USDC.symbol,
+      tokenConfig.USDC.name,
+    );
 
     const normalizedBuyToken = buyToken?.toUpperCase();
     if (!normalizedBuyToken) {

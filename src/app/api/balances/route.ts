@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createPublicClient, http, formatEther, formatUnits } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { ACTIVE_CHAIN, CHAINS, type ChainKey } from '../../../../config';
+import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../../../config/blockchain_config';
+import { BASE_MAINNET, BASE_SEPOLIA, ETH_MAINNET, ETH_SEPOLIA, resolveRpcUrls } from '../../../../config/chain_info';
+import { USDC as BASE_USDC, WETH as BASE_WETH } from '../../../../config/token_info/base_tokens';
+import { USDC as BASE_SEPOLIA_USDC, WETH as BASE_SEPOLIA_WETH } from '../../../../config/token_info/base_testnet_sepolia_tokens';
+import { USDC as ETH_USDC, WETH as ETH_WETH } from '../../../../config/token_info/eth_tokens';
+import { USDC as ETH_SEPOLIA_USDC, WETH as ETH_SEPOLIA_WETH } from '../../../../config/token_info/eth_sepolia_testnet_tokens';
 import { getPrivyEvmWalletAddress } from '@/lib/privy';
 import { cookies } from 'next/headers';
 
@@ -44,21 +49,41 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unable to resolve wallet address' }, { status: 401 });
     }
 
-    const chainConfig = chainKey && chainKey in CHAINS ? CHAINS[chainKey] : ACTIVE_CHAIN;
+    const chainConfigs = {
+      BASE_SEPOLIA,
+      ETH_SEPOLIA,
+      ETH_MAINNET,
+      BASE_MAINNET,
+    } as const;
+
+    const resolvedChainKey: ChainKey =
+      chainKey && chainKey in CHAINS ? chainKey : (BLOCKCHAIN as ChainKey);
+
+    const chainConfig = chainConfigs[resolvedChainKey];
+    const resolvedRpcUrls = resolveRpcUrls(chainConfig.rpcUrls);
+    const primaryRpcUrl = resolvedRpcUrls[0];
+    const tokenConfigs = {
+      BASE_SEPOLIA: { USDC: BASE_SEPOLIA_USDC, WETH: BASE_SEPOLIA_WETH },
+      ETH_SEPOLIA: { USDC: ETH_SEPOLIA_USDC, WETH: ETH_SEPOLIA_WETH },
+      ETH_MAINNET: { USDC: ETH_USDC, WETH: ETH_WETH },
+      BASE_MAINNET: { USDC: BASE_USDC, WETH: BASE_WETH },
+    } as const;
+
+    const tokenConfig = tokenConfigs[resolvedChainKey];
     const client = createPublicClient({
       chain: {
         ...baseSepolia,
         id: chainConfig.chainId,
-        rpcUrls: { default: { http: [chainConfig.rpcUrl] }, public: { http: [chainConfig.rpcUrl] } },
+        rpcUrls: { default: { http: resolvedRpcUrls }, public: { http: resolvedRpcUrls } },
       },
-      transport: http(chainConfig.rpcUrl),
+      transport: http(primaryRpcUrl),
     });
 
     const ethBalanceRaw = await client.getBalance({ address: addressToQuery });
     const eth = formatEther(ethBalanceRaw);
     let usdc = '0';
 
-    const usdcAddress = chainConfig.usdc;
+    const usdcAddress = tokenConfig?.USDC?.address;
     if (usdcAddress) {
       try {
         const [decimals, usdcBalanceRaw] = await Promise.all([

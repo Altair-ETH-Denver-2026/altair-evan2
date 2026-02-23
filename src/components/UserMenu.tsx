@@ -5,12 +5,15 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useSwap } from '../lib/useSwap';
 import { UserRound, LogOut, Settings, Wallet, Wrench, Copy, Globe2, Check } from 'lucide-react';
 import { useEffect as useClientEffect, useState as useClientState } from 'react';
-import { BALANCE_DECIMALS, BLOCKCHAIN, CHAINS, type ChainKey } from '../../config';
+import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../config/blockchain_config';
+import { BALANCE_DECIMALS, MENU_ICONS, WALLET_DISPLAY, X_SIZE } from '../../config/ui_config';
 
 export default function UserMenu() {
   const { logout, authenticated } = usePrivy();
+  const cachedEvmKey = 'cached:evmAddress';
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [isWalletPanelOpen, setIsWalletPanelOpen] = useState(false);
   const [isDevOpen, setIsDevOpen] = useState(false);
   const [isSwapping, setIsSwapping] = useState(false);
   const [swapMessage, setSwapMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -21,6 +24,8 @@ export default function UserMenu() {
   const [selectedChain, setSelectedChain] = useState<ChainKey>(BLOCKCHAIN);
   const executeSwap = useSwap(selectedChain);
   const menuRef = useRef<HTMLDivElement>(null);
+  const isWalletDropDown = WALLET_DISPLAY.active === 'drop_down';
+  const isWalletPanel = WALLET_DISPLAY.active === 'panel';
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -50,25 +55,35 @@ export default function UserMenu() {
         setEthBalance('0');
         setUsdcBalance('0');
         setEvmAddress('');
+        setIsWalletPanelOpen(false);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(cachedEvmKey);
+        }
         return;
       }
 
       const token = typeof window !== 'undefined' ? localStorage.getItem('privy:token') : null;
-      if (!token) return;
+      const cachedAddress = typeof window !== 'undefined' ? localStorage.getItem(cachedEvmKey) : null;
+      if (!token && !cachedAddress) return;
 
       try {
         const res = await fetch('/api/balances', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ accessToken: token, chain: selectedChain }),
+          body: JSON.stringify({ accessToken: token, chain: selectedChain, walletAddress: cachedAddress ?? undefined }),
           signal: controller.signal,
         });
 
         const data = await res.json();
         if (data?.eth) setEthBalance(data.eth);
         if (data?.usdc) setUsdcBalance(data.usdc);
-        if (data?.address) setEvmAddress(data.address);
+        if (data?.address) {
+          setEvmAddress(data.address);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(cachedEvmKey, data.address);
+          }
+        }
       } catch {
         setEthBalance('0');
         setUsdcBalance('0');
@@ -113,9 +128,23 @@ export default function UserMenu() {
         setIsNetworkOpen(false);
       }}
           title="Dev Tools"
-          className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all shadow-md cursor-pointer"
+          className="flex items-center justify-center rounded-full border-[var(--border-color)] hover:border-[var(--highlight-color)] transition-all shadow-md cursor-pointer"
+          style={{
+            width: `${MENU_ICONS.size * 4 * 1.6}px`,
+            height: `${MENU_ICONS.size * 4 * 1.6}px`,
+            backgroundColor: MENU_ICONS.container_color,
+            borderColor: isDevOpen ? MENU_ICONS.highlight_color : undefined,
+            borderWidth: `${MENU_ICONS.border_width}px`,
+            boxSizing: 'content-box',
+            ['--border-color' as never]: MENU_ICONS.border_color,
+            ['--highlight-color' as never]: MENU_ICONS.highlight_color,
+          }}
         >
-          <Wrench className="w-6 h-6 text-gray-300" />
+          <Wrench
+            className=""
+            style={{ width: `${MENU_ICONS.size * 4}px`, height: `${MENU_ICONS.size * 4}px` }}
+            color={MENU_ICONS.icon_color}
+          />
         </button>
         {isDevOpen && (
           <div className="absolute right-0 mt-3 w-48 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] overflow-hidden flex flex-col">
@@ -195,9 +224,23 @@ export default function UserMenu() {
             setIsDevOpen(false);
           }}
           title="Switch Chain"
-          className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all shadow-md cursor-pointer"
+          className="flex items-center justify-center rounded-full border-[var(--border-color)] hover:border-[var(--highlight-color)] transition-all shadow-md cursor-pointer"
+          style={{
+            width: `${MENU_ICONS.size * 4 * 1.6}px`,
+            height: `${MENU_ICONS.size * 4 * 1.6}px`,
+            backgroundColor: MENU_ICONS.container_color,
+            borderColor: isNetworkOpen ? MENU_ICONS.highlight_color : undefined,
+            borderWidth: `${MENU_ICONS.border_width}px`,
+            boxSizing: 'content-box',
+            ['--border-color' as never]: MENU_ICONS.border_color,
+            ['--highlight-color' as never]: MENU_ICONS.highlight_color,
+          }}
         >
-          <Globe2 className="w-6 h-6 text-gray-300" />
+          <Globe2
+            className=""
+            style={{ width: `${MENU_ICONS.size * 4}px`, height: `${MENU_ICONS.size * 4}px` }}
+            color={MENU_ICONS.icon_color}
+          />
         </button>
         {isNetworkOpen && (
           <div className="absolute right-0 mt-3 w-48 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] overflow-hidden flex flex-col">
@@ -233,17 +276,39 @@ export default function UserMenu() {
       <div className="relative">
         <button
           onClick={() => {
-            setIsWalletOpen(!isWalletOpen);
+            if (isWalletDropDown) {
+              setIsWalletOpen(!isWalletOpen);
+            }
+            if (isWalletPanel) {
+              setIsWalletPanelOpen((current) => !current);
+            }
             setIsProfileOpen(false);
             setIsDevOpen(false);
             setIsNetworkOpen(false);
           }}
           title="Wallet"
-          className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all shadow-md cursor-pointer"
+          className="flex items-center justify-center rounded-full border-[var(--border-color)] hover:border-[var(--highlight-color)] transition-all shadow-md cursor-pointer"
+          style={{
+            width: `${MENU_ICONS.size * 4 * 1.6}px`,
+            height: `${MENU_ICONS.size * 4 * 1.6}px`,
+            borderColor:
+              (isWalletDropDown && isWalletOpen) || (isWalletPanel && isWalletPanelOpen)
+                ? MENU_ICONS.highlight_color
+                : undefined,
+            backgroundColor: MENU_ICONS.container_color,
+            borderWidth: `${MENU_ICONS.border_width}px`,
+            boxSizing: 'content-box',
+            ['--border-color' as never]: MENU_ICONS.border_color,
+            ['--highlight-color' as never]: MENU_ICONS.highlight_color,
+          }}
         >
-          <Wallet className="w-6 h-6 text-gray-300" />
+          <Wallet
+            className=""
+            style={{ width: `${MENU_ICONS.size * 4}px`, height: `${MENU_ICONS.size * 4}px` }}
+            color={MENU_ICONS.icon_color}
+          />
         </button>
-            {isWalletOpen && (
+            {isWalletDropDown && isWalletOpen && (
           <div className="absolute right-0 mt-3 w-48 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] overflow-hidden flex flex-col">
             <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300 break-all">
               <button
@@ -288,6 +353,59 @@ export default function UserMenu() {
         )}
       </div>
 
+      {isWalletPanel && isWalletPanelOpen && (
+        <div className="absolute right-0 top-full mt-3 w-64 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[90] overflow-hidden flex flex-col">
+          <button
+            type="button"
+            onClick={() => setIsWalletPanelOpen(false)}
+            aria-label="Close wallet panel"
+            className="absolute right-2 top-0 text-gray-400 hover:text-gray-200 cursor-pointer"
+            style={{ fontSize: `${X_SIZE}px` }}
+          >
+            ×
+          </button>
+          <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300 break-all">
+            <button
+              type="button"
+              onClick={() => {
+                if (evmAddress) navigator.clipboard?.writeText(evmAddress).catch(() => {});
+              }}
+              className="text-left cursor-pointer"
+              title={evmAddress || 'Unknown'}
+            >
+              <Copy className="w-4 h-4" />
+            </button>
+            <span className="text-gray-100 px-3 text-right flex-1 text-sm" title={evmAddress || 'Unknown'}>
+              {evmAddress ? `${evmAddress.slice(0, 6)}...${evmAddress.slice(-4)}` : '—'}
+            </span>
+          </div>
+          <div className="h-[1px] bg-gray-700 w-full" />
+          <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300">
+            <span className="flex-1">ETH</span>
+            <span
+              className="text-gray-100 px-3 text-center whitespace-nowrap hover:whitespace-normal"
+              title={ethBalance}
+            >
+              {Number.isNaN(Number(ethBalance))
+                ? ethBalance
+                : Number(ethBalance).toFixed(BALANCE_DECIMALS)}
+            </span>
+          </div>
+          <div className="h-[1px] bg-gray-700 w-full" />
+          <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300">
+            <span className="flex-1">USDC</span>
+            <span
+              className="text-gray-100 px-3 text-center whitespace-nowrap hover:whitespace-normal"
+              title={usdcBalance}
+            >
+              {Number.isNaN(Number(usdcBalance))
+                ? usdcBalance
+                : Number(usdcBalance).toFixed(BALANCE_DECIMALS)}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Profile dropdown */}
       <div className="relative">
         <button
@@ -296,9 +414,23 @@ export default function UserMenu() {
             setIsWalletOpen(false);
           }}
           title="Profile"
-          className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all shadow-md cursor-pointer"
+          className="flex items-center justify-center rounded-full border-[var(--border-color)] hover:border-[var(--highlight-color)] transition-all shadow-md cursor-pointer"
+          style={{
+            width: `${MENU_ICONS.size * 4 * 1.6}px`,
+            height: `${MENU_ICONS.size * 4 * 1.6}px`,
+            backgroundColor: MENU_ICONS.container_color,
+            borderColor: isProfileOpen ? MENU_ICONS.highlight_color : undefined,
+            borderWidth: `${MENU_ICONS.border_width}px`,
+            boxSizing: 'content-box',
+            ['--border-color' as never]: MENU_ICONS.border_color,
+            ['--highlight-color' as never]: MENU_ICONS.highlight_color,
+          }}
         >
-          <UserRound className="w-6 h-6 text-gray-300" />
+          <UserRound
+            className=""
+            style={{ width: `${MENU_ICONS.size * 4}px`, height: `${MENU_ICONS.size * 4}px` }}
+            color={MENU_ICONS.icon_color}
+          />
         </button>
 
         {isProfileOpen && (
