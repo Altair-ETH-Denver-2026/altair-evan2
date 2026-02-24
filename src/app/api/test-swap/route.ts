@@ -42,7 +42,16 @@ export async function POST(req: Request) {
       BASE_MAINNET: { USDC: BASE_USDC, WETH: BASE_WETH },
     } as const;
 
-    const tokenConfig = tokenConfigs[resolvedChainKey];
+    let tokenConfig = tokenConfigs[resolvedChainKey];
+    // Optional .env overrides per chain (e.g. BASE_SEPOLIA_WETH_ADDRESS, BASE_SEPOLIA_USDC_ADDRESS)
+    const envWeth = process.env[`${resolvedChainKey}_WETH_ADDRESS`];
+    const envUsdc = process.env[`${resolvedChainKey}_USDC_ADDRESS`];
+    if (envWeth || envUsdc) {
+      tokenConfig = {
+        WETH: { ...tokenConfig.WETH, ...(envWeth ? { address: envWeth } : {}) },
+        USDC: { ...tokenConfig.USDC, ...(envUsdc ? { address: envUsdc } : {}) },
+      } as typeof tokenConfig;
+    }
     if (!chainConfig) {
       return NextResponse.json({ error: 'Unsupported chain' }, { status: 400 });
     }
@@ -63,57 +72,105 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unsupported token pair' }, { status: 400 });
     }
 
-    const zeroXEndpoints: Partial<Record<ChainKey, string>> = {
-      ETH_MAINNET: 'https://api.0x.org/swap/v1/quote',
-      ETH_SEPOLIA: 'https://sepolia.api.0x.org/swap/v1/quote',
-      BASE_MAINNET: 'https://base.api.0x.org/swap/v1/quote',
-      BASE_SEPOLIA: 'https://base-sepolia.api.0x.org/swap/v1/quote',
-    };
-
-    const zeroXEndpoint = zeroXEndpoints[resolvedChainKey];
     const zeroXApiKey = process.env.ZEROX_API_KEY;
+    const chainId = chainConfig.chainId;
     const zeroXSellToken = normalizedSellToken === 'ETH' ? 'ETH' : tokenConfig.WETH.address;
     const zeroXBuyToken = normalizedBuyToken === 'WETH' ? tokenConfig.WETH.address : tokenConfig.USDC.address;
 
-    if (!zeroXEndpoint) {
-      return NextResponse.json({ error: `No quote backend for chain ${resolvedChainKey}` }, { status: 400 });
-    }
-
-    const zeroXUrl = new URL(zeroXEndpoint);
-    zeroXUrl.searchParams.set('sellToken', zeroXSellToken);
-    zeroXUrl.searchParams.set('buyToken', zeroXBuyToken);
-    zeroXUrl.searchParams.set('sellAmount', amount);
-    zeroXUrl.searchParams.set('takerAddress', recipient);
-    zeroXUrl.searchParams.set('slippagePercentage', '0.005');
-
-    const zeroXResponse = await fetch(zeroXUrl, {
-      headers: {
-        Accept: 'application/json',
-        ...(zeroXApiKey ? { '0x-api-key': zeroXApiKey } : {}),
-      },
-      method: 'GET',
-    });
-
-    if (!zeroXResponse.ok) {
-      const errText = await zeroXResponse.text();
-      return NextResponse.json({ error: `0x quote failed: ${errText}` }, { status: 500 });
-    }
-
-    const zeroXPayload = (await zeroXResponse.json()) as {
-      to?: string;
-      data?: string;
-      value?: string;
+    // 0x v2 does not support testnets (chainId 11155111 / 84532). Use v1 chain-specific endpoints for testnets.
+    const v1TestnetEndpoints: Partial<Record<ChainKey, string>> = {
+      ETH_SEPOLIA: 'https://sepolia.api.0x.org/swap/v1/quote',
+      BASE_SEPOLIA: 'https://base-sepolia.api.0x.org/swap/v1/quote',
     };
-    if (!zeroXPayload?.to || !zeroXPayload?.data || zeroXPayload?.value === undefined) {
-      return NextResponse.json({ error: '0x quote response missing method params' }, { status: 500 });
+    const v1Endpoint = v1TestnetEndpoints[resolvedChainKey];
+    let methodParameters: { to: string; calldata: string; value: string };
+
+    if (v1Endpoint) {
+      const v1Url = new URL(v1Endpoint);
+      v1Url.searchParams.set('sellToken', zeroXSellToken);
+      v1Url.searchParams.set('buyToken', zeroXBuyToken);
+      v1Url.searchParams.set('sellAmount', amount);
+      v1Url.searchParams.set('takerAddress', recipient);
+      v1Url.searchParams.set('slippagePercentage', '0.005');
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (zeroXApiKey) headers['0x-api-key'] = zeroXApiKey;
+      const v1Res = await fetch(v1Url.toString(), { headers, method: 'GET' });
+      if (!v1Res.ok) {
+        const errText = await v1Res.text();
+        let msg = errText;
+        try {
+          const errJson = JSON.parse(errText) as { message?: string };
+          if (errJson?.message?.toLowerCase().includes('no route')) {
+            msg = `No swap route on ${resolvedChainKey} (0x may have limited testnet liquidity). Try a small amount or another chain.`;
+          }
+        } catch {
+          // keep msg
+        }
+        return NextResponse.json({ error: `0x ${resolvedChainKey} quote failed: ${msg}` }, { status: 500 });
+      }
+      const v1Payload = (await v1Res.json()) as { to?: string; data?: string; value?: string };
+      if (!v1Payload?.to || !v1Payload?.data || v1Payload?.value === undefined) {
+        return NextResponse.json({ error: `0x ${resolvedChainKey} response missing to/data/value` }, { status: 500 });
+      }
+      methodParameters = { to: v1Payload.to, calldata: v1Payload.data, value: v1Payload.value };
+    } else {
+      // 0x Swap API v2 for mainnets (Base, Ethereum, etc.)
+      if (!zeroXApiKey) {
+        return NextResponse.json(
+          { error: 'ZEROX_API_KEY is required for 0x Swap API v2 (mainnet). Set it in .env and restart the server.' },
+          { status: 500 }
+        );
+      }
+      const v2Url = new URL('https://api.0x.org/swap/allowance-holder/quote');
+      v2Url.searchParams.set('chainId', String(chainId));
+      v2Url.searchParams.set('sellToken', zeroXSellToken);
+      v2Url.searchParams.set('buyToken', zeroXBuyToken);
+      v2Url.searchParams.set('sellAmount', amount);
+      v2Url.searchParams.set('taker', recipient);
+      v2Url.searchParams.set('slippageBps', '50');
+
+      const v2Res = await fetch(v2Url.toString(), {
+        headers: {
+          Accept: 'application/json',
+          '0x-api-key': zeroXApiKey,
+          '0x-version': 'v2',
+        },
+        method: 'GET',
+      });
+
+      if (!v2Res.ok) {
+        const errText = await v2Res.text();
+        let userMessage = `0x quote failed: ${errText}`;
+        try {
+          const errJson = JSON.parse(errText) as { message?: string };
+          if (errJson?.message?.toLowerCase().includes('no route')) {
+            userMessage = `No swap route for ${normalizedSellToken}/${normalizedBuyToken} on ${resolvedChainKey}. Check chain and token addresses.`;
+          }
+        } catch {
+          // keep userMessage
+        }
+        return NextResponse.json({ error: userMessage }, { status: 500 });
+      }
+
+      const v2Payload = (await v2Res.json()) as {
+        liquidityAvailable?: boolean;
+        transaction?: { to: string; data: string; value: string; gas?: string };
+      };
+      if (v2Payload.liquidityAvailable === false || !v2Payload.transaction) {
+        return NextResponse.json(
+          { error: `No liquidity for ${normalizedSellToken}/${normalizedBuyToken} on chain ${chainId}.` },
+          { status: 500 }
+        );
+      }
+      const tx = v2Payload.transaction;
+      if (!tx.to || !tx.data || tx.value === undefined) {
+        return NextResponse.json({ error: '0x quote response missing transaction fields' }, { status: 500 });
+      }
+      methodParameters = { to: tx.to, calldata: tx.data, value: tx.value };
     }
 
     return NextResponse.json({
-      methodParameters: {
-        to: zeroXPayload.to,
-        calldata: zeroXPayload.data,
-        value: zeroXPayload.value,
-      },
+      methodParameters,
       source: '0x',
       chainRpcCandidates: resolveRpcUrls(chainConfig.rpcUrls),
     });

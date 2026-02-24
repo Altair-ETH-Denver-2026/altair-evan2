@@ -14,7 +14,9 @@ if (!PRIVY_APP_SECRET) {
 
 const privy = new PrivyClient(PRIVY_APP_ID, PRIVY_APP_SECRET, {
   walletApi: {
-    authorizationPrivateKey: process.env.PRIVY_WALLET_AUTH_PRIVATE_KEY,
+    authorizationPrivateKey:
+      process.env.PRIVY_WALLET_AUTH_PRIVATE_KEY ??
+      process.env.PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY,
   },
 });
 
@@ -82,8 +84,8 @@ export async function ensurePrivyEmbeddedEvmWallet(accessToken: string): Promise
     throw new Error('Missing Privy access token');
   }
 
-  if (!process.env.PRIVY_WALLET_AUTH_PRIVATE_KEY) {
-    throw new Error('Missing PRIVY_WALLET_AUTH_PRIVATE_KEY for server-side wallet control');
+  if (!process.env.PRIVY_WALLET_AUTH_PRIVATE_KEY && !process.env.PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY) {
+    throw new Error('Missing PRIVY_WALLET_AUTH_PRIVATE_KEY (or PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY) for server-side wallet control');
   }
 
   const claims = await privy.verifyAuthToken(accessToken, PRIVY_VERIFICATION_KEY);

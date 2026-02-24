@@ -57,23 +57,34 @@ function buildUpdatedChatSummary(
 
 export async function POST(req: Request) {
   try {
-    const { message, history, accessToken } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { message, history, accessToken: bodyToken } = (body || {}) as {
+      message?: string;
+      history?: Array<{ role: string; content: string }>;
+      accessToken?: string;
+    };
     const cookieStore = await cookies();
-    const cookieToken = cookieStore.get('privy-token')?.value ?? null;
-    const resolvedAccessToken =
-      typeof accessToken === 'string' && accessToken.length > 0
-        ? accessToken
-        : (cookieToken ?? null);
+    const cookieToken = cookieStore.get('privy-token')?.value;
+    const accessToken =
+      (cookieToken ?? bodyToken) && String(cookieToken ?? bodyToken).trim()
+        ? String(cookieToken ?? bodyToken)
+        : null;
 
     let zgHash: string | null = null;
     let zgError: string | null = null;
     let priorMemory: Record<string, unknown> | null = null;
 
     // Pre-read latest user-scoped memory and inject compact context into the system prompt.
-    if (typeof resolvedAccessToken === 'string' && resolvedAccessToken.length > 0) {
+    if (accessToken) {
       try {
-        const read = await getUserMemory({ key: 'chat_summary_latest', accessToken: resolvedAccessToken });
+        const read = await getUserMemory({ key: 'chat_summary_latest', accessToken });
         priorMemory = parseMemoryValue(read.value);
+        console.log('[0G] Pre-read memory ok', {
+          status: read.status,
+          backend: read.backend,
+          hasValue: !!read.value,
+          namespace: read.namespace,
+        });
       } catch (readErr) {
         console.warn('0G pre-read memory failed:', readErr);
       }
@@ -114,19 +125,26 @@ export async function POST(req: Request) {
     const executionNote: string | null = null;
 
     // Persist summary into user-scoped 0G memory.
-    if (typeof resolvedAccessToken === 'string' && resolvedAccessToken.length > 0) {
+    if (accessToken) {
       try {
         const write = await saveUserMemory({
           key: 'chat_summary_latest',
-          accessToken: resolvedAccessToken,
+          accessToken,
           value: JSON.stringify(buildUpdatedChatSummary(priorMemory, message, aiResponse)),
         });
         zgHash = write.rootHash ?? null;
         if (write.backend === 'local_file' && write.error) {
           zgError = write.error;
         }
+        console.log('[0G] Post-write memory', {
+          backend: write.backend,
+          rootHash: write.rootHash ?? null,
+          namespace: write.namespace,
+          error: write.error ?? null,
+        });
       } catch (saveErr) {
         zgError = saveErr instanceof Error ? saveErr.message : 'Failed to save memory to 0G';
+        console.warn('0G post-write failed:', saveErr);
       }
     }
 
