@@ -41,8 +41,8 @@ const tokenMaps: Record<keyof typeof chainConfigs, ChainTokens> = {
   ARBITRUM_ONE: ARBITRUM_ONE_TOKENS,
 };
 
-/** 0x Swap API v2 requires an address for native ETH; this is the standard sentinel (see 0x docs / ERC-7528). */
-const NATIVE_ETH_ADDRESS = '0xEeeeeEeeeEeeeEeeeEeeeEeeeEeEeeEeEeEeEeEeeEeEe';
+/** 0x Swap API v2 requires native ETH as this sentinel address (use lowercase per 0x docs). */
+const NATIVE_ETH_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
 export async function POST(req: Request) {
   try {
