@@ -3,7 +3,7 @@
  * Used by the chat API to inject balance context so the AI can answer "what's my balance?" and "sell all X".
  */
 import { createPublicClient, http, formatEther, formatUnits } from 'viem';
-import { baseSepolia } from 'viem/chains';
+import { arbitrum, base, mainnet, baseSepolia, sepolia } from 'viem/chains';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { BLOCKCHAIN, CHAINS, isSolanaChain, type ChainKey, type EvmChainKey } from '../../config/blockchain_config';
 import { ARBITRUM_ONE, BASE_MAINNET, BASE_SEPOLIA, ETH_MAINNET, ETH_SEPOLIA, resolveRpcUrls } from '../../config/chain_info';
@@ -67,7 +67,13 @@ export async function fetchUserBalanceForChain(
       return out;
     }
 
-    const addressToQuery = await getPrivyEvmWalletAddress(accessToken) as `0x${string}` | null;
+    let addressToQuery: `0x${string}` | null = null;
+    try {
+      addressToQuery = (await getPrivyEvmWalletAddress(accessToken)) as `0x${string}`;
+    } catch (evmWalletErr) {
+      console.warn('[fetchUserBalanceForChain] EVM wallet resolution failed:', evmWalletErr);
+      return null;
+    }
     if (!addressToQuery) return null;
 
     const chainConfigs = { BASE_SEPOLIA, ETH_SEPOLIA, ETH_MAINNET, BASE_MAINNET, ARBITRUM_ONE } as const;
@@ -75,6 +81,18 @@ export async function fetchUserBalanceForChain(
     const chainConfig = chainConfigs[evmChainKey];
     const resolvedRpcUrls = resolveRpcUrls(chainConfig.rpcUrls);
     const primaryRpcUrl = resolvedRpcUrls[0];
+    if (!primaryRpcUrl) {
+      console.warn('[fetchUserBalanceForChain] No RPC URL for chain', evmChainKey);
+      return null;
+    }
+    const viemChains = {
+      BASE_SEPOLIA: baseSepolia,
+      ETH_SEPOLIA: sepolia,
+      ETH_MAINNET: mainnet,
+      BASE_MAINNET: base,
+      ARBITRUM_ONE: arbitrum,
+    } as const;
+    const viemChain = viemChains[evmChainKey];
     const tokenConfigs = {
       BASE_SEPOLIA: { USDC: BASE_SEPOLIA_USDC, WETH: BASE_SEPOLIA_WETH },
       ETH_SEPOLIA: { USDC: ETH_SEPOLIA_USDC, WETH: ETH_SEPOLIA_WETH },
@@ -84,7 +102,7 @@ export async function fetchUserBalanceForChain(
     } as const;
     const tokenConfig = tokenConfigs[evmChainKey];
     const client = createPublicClient({
-      chain: { ...baseSepolia, id: chainConfig.chainId, rpcUrls: { default: { http: resolvedRpcUrls }, public: { http: resolvedRpcUrls } } },
+      chain: { ...viemChain, rpcUrls: { default: { http: [primaryRpcUrl] }, public: { http: resolvedRpcUrls.length ? resolvedRpcUrls : [primaryRpcUrl] } } },
       transport: http(primaryRpcUrl),
     });
 
