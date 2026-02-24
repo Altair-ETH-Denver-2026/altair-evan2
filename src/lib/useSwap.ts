@@ -32,7 +32,7 @@ const resolveSelectedChain = (explicitChain?: ChainKey) => {
 };
 
 const ensureEvmChain = async (
-  ethereumProvider: ethers.providers.ExternalProvider,
+  ethereumProvider: ethers.Eip1193Provider,
   chainKey: ChainKey,
 ) => {
   const chainConfig = chainConfigs[chainKey];
@@ -101,14 +101,13 @@ export const useSwap = (explicitChain?: ChainKey) => {
     const ethereumProvider = await wallet.getEthereumProvider();
     await ensureEvmChain(ethereumProvider, selectedChain);
 
-    const provider = new ethers.providers.Web3Provider(ethereumProvider, chainConfig.chainId);
-    await provider.ready;
-    const signer = provider.getSigner();
+    const provider = new ethers.BrowserProvider(ethereumProvider);
+    const signer = await provider.getSigner();
     const recipient = await signer.getAddress();
 
     const normalizedSell = sellToken.toUpperCase();
     const normalizedBuy = buyToken.toUpperCase();
-    const amountWei = ethers.utils.parseEther(sellAmount);
+    const amountWei = ethers.parseEther(sellAmount);
 
     let effectiveSell = normalizedSell;
 
@@ -162,15 +161,14 @@ export const useSwap = (explicitChain?: ChainKey) => {
         signer,
       );
 
-      await wethApprove.approve(routePayload.methodParameters.to, ethers.constants.MaxUint256);
+      await wethApprove.approve(routePayload.methodParameters.to, ethers.MaxUint256);
     }
 
-    console.log('[Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap] RPC URL:', (provider as ethers.providers.Web3Provider).connection?.url);
     const tx = await signer.sendTransaction({
       to: routePayload.methodParameters.to,
       data: routePayload.methodParameters.calldata,
       value: routePayload.methodParameters.value,
-      gasLimit: ethers.utils.hexlify(1_000_000),
+      gasLimit: 1_000_000n,
     });
 
     await tx.wait();

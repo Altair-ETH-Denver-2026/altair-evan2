@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Altair DeFi (Base + 0G)
 
-## Getting Started
+Altair is a Next.js app that integrates:
 
-First, run the development server:
+- Privy embedded wallets
+- Swap flows and quote handling
+- 0G user-scoped chat memory with fallback behavior
+
+## Run Locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+corepack yarn install
+corepack yarn dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+App runs at `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Core Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Privy
+- `NEXT_PUBLIC_PRIVY_APP_ID`
+- `PRIVY_APP_SECRET`
+- `PRIVY_VERIFICATION_KEY`
+- `PRIVY_WALLET_AUTH_PRIVATE_KEY`
 
-## Learn More
+### OpenAI
+- `OPENAI_API_KEY`
 
-To learn more about Next.js, take a look at the following resources:
+### 0G
+- `ZG_PRIVATE_KEY`
+- `ZG_RPC_URL` (default: `https://evmrpc-testnet.0g.ai`)
+- `ZG_INDEXER_RPC` (default: `https://indexer-storage-testnet-turbo.0g.ai`)
+- `ZG_NETWORK` (default: `testnet`)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Optional controls:
+- `ZG_STORAGE_MODE=onchain_0g|hybrid|local_only` (default `hybrid`)
+- `ZG_ENABLE_LOCAL_FALLBACK=true|false` (default `true`)
+- `ZG_CIRCUIT_BREAKER_THRESHOLD` (default `3`)
+- `ZG_CIRCUIT_BREAKER_COOLDOWN_MS` (default `300000`)
+- `ZG_LOCAL_FALLBACK_PATH` (default `.cache/zg-memory-fallback.json`)
+- `ZG_LOCAL_INDEX_PATH` (default `.cache/zg-storage-index.json`)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## User-Scoped 0G Chat Memory
 
-## Deploy on Vercel
+Chat memory is persisted per user namespace and reused across sessions:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Namespace format: `privy:<userId>:wallet:<address>`
+- Primary key: `chat_summary_latest`
+- Storage backend: 0G file storage (with local fallback in hybrid mode)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`/api/chat` flow:
+
+1. **Pre-read memory** for current user namespace.
+2. **Inject compact memory context** into OpenAI system prompt as `User Memory Context`.
+3. **Post-write updated summary** (`v2`) to `chat_summary_latest`.
+
+This enables user-specific recall after logout/login when the same Privy account is used.
+
+## 0G SDK Patch (Galileo Testnet)
+
+`@0glabs/0g-ts-sdk` can require ABI patching to match current Galileo contract behavior.
+
+- **Automatic:** `postinstall` runs `scripts/patch-0g-sdk.js`
+- **Manual:** `yarn patch:0g` or `npm run patch:0g`
+
+Patch reference:
+- [MattWong-ca/ethdenver-2026 patch-0g-sdk.js](https://github.com/MattWong-ca/ethdenver-2026/blob/main/templates/storage/scripts/patch-0g-sdk.js)
+
+## 0G Diagnostics Endpoints
+
+- `GET /api/test-0g-preflight`
+- `POST /api/test-0g-write-read`
+- `POST /api/test-0g-get-memory`
+- `GET /api/test-user-memory-namespace`
