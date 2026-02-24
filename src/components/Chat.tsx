@@ -23,6 +23,13 @@ interface SwapIntent {
   amount: number | string;
 }
 
+const WELCOME_MESSAGE = "Hey! I'm Altair — your DeFi sidekick. I can help you swap tokens, explore staking, or find yield. Pick something below or just ask.";
+const SAMPLE_PROMPTS = [
+  { label: 'Swap', prompt: 'I want to swap some ETH for USDC. What do I need to do?' },
+  { label: 'Stake', prompt: 'How does staking work here? What can I stake?' },
+  { label: 'Yield', prompt: 'Where can I earn yield on my assets?' },
+] as const;
+
 export default function Chat() {
   const { authenticated, getAccessToken } = usePrivy();
   const executeSwap = useSwap();
@@ -31,6 +38,7 @@ export default function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [isExecutingSwap, setIsExecutingSwap] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -220,7 +228,26 @@ export default function Chat() {
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-hide">
         {messages.length === 0 && (
-          <p className="text-gray-500 text-center mt-20">Ask me to swap ETH for USDC or check your balance...</p>
+          <div className="flex flex-col items-center mt-12 max-w-md mx-auto text-center">
+            <p className="text-gray-200 text-sm leading-relaxed mb-6">
+              {WELCOME_MESSAGE}
+            </p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {SAMPLE_PROMPTS.map(({ label, prompt }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => {
+                    setInput(prompt);
+                    inputRef.current?.focus();
+                  }}
+                  className="px-4 py-2 rounded-xl text-sm font-medium transition-colors border border-gray-600 text-gray-200 hover:bg-gray-700/80 hover:border-gray-500"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {messages.map((m, i) => (
           m.role === 'assistant' ? (
@@ -295,10 +322,11 @@ export default function Chat() {
         }}
       >
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-          placeholder="I want to swap 0.1 ETH for USDC..."
+          placeholder="Swap, stake, yield — or ask anything..."
           className="flex-1 bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-[var(--chat-highlight-color)] transition-colors"
           style={{ ['--chat-highlight-color' as never]: CHAT_PANEL.chat_highlight_color }}
         />
