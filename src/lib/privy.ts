@@ -14,7 +14,9 @@ if (!PRIVY_APP_SECRET) {
 
 const privy = new PrivyClient(PRIVY_APP_ID, PRIVY_APP_SECRET, {
   walletApi: {
-    authorizationPrivateKey: process.env.PRIVY_WALLET_AUTH_PRIVATE_KEY,
+    authorizationPrivateKey:
+      process.env.PRIVY_WALLET_AUTH_PRIVATE_KEY ??
+      process.env.PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY,
   },
 });
 
@@ -77,13 +79,60 @@ export async function getPrivyEvmWalletAddress(accessToken: string): Promise<str
   );
 }
 
+/** Returns the user's Solana wallet public key (base58). Used for 0x Solana quotes and swap taker. */
+export async function getPrivySolanaWalletAddress(accessToken: string): Promise<string> {
+  if (!accessToken) {
+    throw new Error('Missing Privy access token');
+  }
+
+  const claims = await privy.verifyAuthToken(accessToken, PRIVY_VERIFICATION_KEY);
+  const user = await privy.getUserById(claims.userId);
+
+  const isSolanaWallet = (w: { chainType?: string; chainId?: string; address?: string }) =>
+    (w?.chainType === 'solana' || w?.chainId === 'solana:101') && !!w?.address;
+
+  const topLevel =
+    user.wallet && isSolanaWallet(user.wallet as { chainType?: string; address?: string })
+      ? (user.wallet as { address: string }).address
+      : undefined;
+
+  const linked = user.linkedAccounts?.find((a: LinkedAccountWithMetadata) => {
+    const w = a as LinkedAccountWithMetadata & { chainType?: string; chainId?: string; address?: string };
+    return w.type === 'wallet' && isSolanaWallet(w) && !!w.address;
+  }) as (LinkedAccountWithMetadata & { address?: string }) | undefined;
+
+  const solanaAddress = topLevel || linked?.address;
+  if (solanaAddress) {
+    console.log('[Privy] Found Solana wallet:', solanaAddress);
+    return solanaAddress;
+  }
+
+  try {
+    const { data: wallets } = await privy.walletApi.getWallets({
+      chainType: 'solana',
+    });
+    const wallet = wallets?.find((w: { address?: string }) => w.address);
+    if (wallet?.address) {
+      console.log('[Privy] Found Solana wallet via walletApi:', wallet.address);
+      return wallet.address;
+    }
+  } catch (e) {
+    console.warn('[Privy] walletApi.getWallets(solana) failed:', e);
+  }
+
+  throw new Error(
+    `No Privy Solana wallet found for user ${claims.userId}. ` +
+    `Linked account types: ${user.linkedAccounts?.map((a) => a.type).join(', ')}.`
+  );
+}
+
 export async function ensurePrivyEmbeddedEvmWallet(accessToken: string): Promise<{ walletId: string; address: string }> {
   if (!accessToken) {
     throw new Error('Missing Privy access token');
   }
 
-  if (!process.env.PRIVY_WALLET_AUTH_PRIVATE_KEY) {
-    throw new Error('Missing PRIVY_WALLET_AUTH_PRIVATE_KEY for server-side wallet control');
+  if (!process.env.PRIVY_WALLET_AUTH_PRIVATE_KEY && !process.env.PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY) {
+    throw new Error('Missing PRIVY_WALLET_AUTH_PRIVATE_KEY (or PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY) for server-side wallet control');
   }
 
   const claims = await privy.verifyAuthToken(accessToken, PRIVY_VERIFICATION_KEY);

@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server';
 import { createPublicClient, http, formatEther, formatUnits } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../../../config/blockchain_config';
-import { BASE_MAINNET, BASE_SEPOLIA, ETH_MAINNET, ETH_SEPOLIA, resolveRpcUrls } from '../../../../config/chain_info';
+import { Connection, PublicKey } from '@solana/web3.js';
+import { BLOCKCHAIN, CHAINS, isSolanaChain, type ChainKey, type EvmChainKey } from '../../../../config/blockchain_config';
+import { ARBITRUM_ONE, BASE_MAINNET, BASE_SEPOLIA, ETH_MAINNET, ETH_SEPOLIA, resolveRpcUrls } from '../../../../config/chain_info';
+import { SOLANA_MAINNET } from '../../../../config/solana_config';
+import { SOLANA_MAINNET_TOKENS, SOLANA_WALLET_DISPLAY_SYMBOLS } from '../../../../config/token_info/solana_tokens';
 import { USDC as BASE_USDC, WETH as BASE_WETH } from '../../../../config/token_info/base_tokens';
 import { USDC as BASE_SEPOLIA_USDC, WETH as BASE_SEPOLIA_WETH } from '../../../../config/token_info/base_testnet_sepolia_tokens';
 import { USDC as ETH_USDC, WETH as ETH_WETH } from '../../../../config/token_info/eth_tokens';
 import { USDC as ETH_SEPOLIA_USDC, WETH as ETH_SEPOLIA_WETH } from '../../../../config/token_info/eth_sepolia_testnet_tokens';
-import { getPrivyEvmWalletAddress } from '@/lib/privy';
+import { USDC as ARBITRUM_USDC, WETH as ARBITRUM_WETH } from '../../../../config/token_info/arbitrum_tokens';
+import { getPrivyEvmWalletAddress, getPrivySolanaWalletAddress } from '@/lib/privy';
 import { cookies } from 'next/headers';
 
 const USDC_ABI = [
@@ -42,6 +46,47 @@ export async function POST(req: Request) {
     const cookieToken = cookieStore.get('privy-token')?.value;
     const tokenToVerify = cookieToken ?? bodyToken ?? null;
 
+    const resolvedChainKey: ChainKey =
+      chainKey && chainKey in CHAINS ? chainKey : (BLOCKCHAIN as ChainKey);
+
+    // --- Solana: SOL + all display tokens (USDC, JUP, RAY, KMNO, DRIFT, W) ---
+    if (isSolanaChain(resolvedChainKey)) {
+      const solanaAddress = tokenToVerify
+        ? await getPrivySolanaWalletAddress(tokenToVerify)
+        : null;
+      if (!solanaAddress) {
+        return NextResponse.json({ error: 'Unable to resolve Solana wallet address' }, { status: 401 });
+      }
+      const connection = new Connection(SOLANA_MAINNET.rpcUrl);
+      const pubkey = new PublicKey(solanaAddress);
+      const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+      const [solLamports, tokenAccountsRes] = await Promise.all([
+        connection.getBalance(pubkey),
+        connection.getParsedTokenAccountsByOwner(pubkey, { programId: TOKEN_PROGRAM_ID }),
+      ]);
+      const solBalance = (solLamports / 1e9).toFixed(9);
+      const mintToBalance: Record<string, string> = {};
+      for (const { account } of tokenAccountsRes.value) {
+        const info = account.data?.parsed?.info;
+        const mint = info?.mint as string | undefined;
+        const uiAmount = info?.tokenAmount?.uiAmount;
+        if (mint && uiAmount != null) {
+          mintToBalance[mint] = String(uiAmount);
+        }
+      }
+      const out: Record<string, string> = {
+        address: solanaAddress,
+        eth: solBalance,
+        usdc: mintToBalance[SOLANA_MAINNET_TOKENS.USDC.address] ?? '0',
+      };
+      for (const sym of SOLANA_WALLET_DISPLAY_SYMBOLS) {
+        if (sym === 'SOL' || sym === 'USDC') continue;
+        const token = SOLANA_MAINNET_TOKENS[sym];
+        if (token) out[sym] = mintToBalance[token.address] ?? '0';
+      }
+      return NextResponse.json(out);
+    }
+
     const addressToQuery = (overrideAddress
       ?? (tokenToVerify ? await getPrivyEvmWalletAddress(tokenToVerify) : null)) as `0x${string}` | null;
 
@@ -54,12 +99,11 @@ export async function POST(req: Request) {
       ETH_SEPOLIA,
       ETH_MAINNET,
       BASE_MAINNET,
+      ARBITRUM_ONE,
     } as const;
 
-    const resolvedChainKey: ChainKey =
-      chainKey && chainKey in CHAINS ? chainKey : (BLOCKCHAIN as ChainKey);
-
-    const chainConfig = chainConfigs[resolvedChainKey];
+    const evmChainKey = resolvedChainKey as EvmChainKey;
+    const chainConfig = chainConfigs[evmChainKey];
     const resolvedRpcUrls = resolveRpcUrls(chainConfig.rpcUrls);
     const primaryRpcUrl = resolvedRpcUrls[0];
     const tokenConfigs = {
@@ -67,9 +111,10 @@ export async function POST(req: Request) {
       ETH_SEPOLIA: { USDC: ETH_SEPOLIA_USDC, WETH: ETH_SEPOLIA_WETH },
       ETH_MAINNET: { USDC: ETH_USDC, WETH: ETH_WETH },
       BASE_MAINNET: { USDC: BASE_USDC, WETH: BASE_WETH },
+      ARBITRUM_ONE: { USDC: ARBITRUM_USDC, WETH: ARBITRUM_WETH },
     } as const;
 
-    const tokenConfig = tokenConfigs[resolvedChainKey];
+    const tokenConfig = tokenConfigs[evmChainKey];
     const client = createPublicClient({
       chain: {
         ...baseSepolia,

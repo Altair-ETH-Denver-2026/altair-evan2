@@ -6,7 +6,10 @@ import { SpinningLogo } from './SpinningLogo';
 import { ShieldCheck, Send, Loader2 } from 'lucide-react';
 import Logo from '../image/logo.png';
 import { usePrivy } from '@privy-io/react-auth';
-import { useSwap } from '../lib/useSwap';
+import { useSwap, resolveSelectedChain } from '../lib/useSwap';
+import { useSolanaSwap } from '../lib/useSolanaSwap';
+import { getExplorerTxUrl } from '../lib/explorer_links';
+import { CHAINS, type ChainKey } from '../../config/blockchain_config';
 import { CHAT_PANEL } from '../../config/ui_config';
 
 interface Message {
@@ -14,6 +17,8 @@ interface Message {
   content: string;
   zgHash?: string | null;
   zgError?: string | null;
+  /** When set, the last line of content is rendered as a link to this tx URL (Solana: solscan.io, EVM: etherscan/basescan/arbiscan). */
+  txExplorerUrl?: string | null;
 }
 
 interface SwapIntent {
@@ -23,14 +28,23 @@ interface SwapIntent {
   amount: number | string;
 }
 
+const WELCOME_MESSAGE = "Hey! I'm Altair — your DeFi sidekick. I can help you swap tokens, explore staking, or find yield. Pick something below or just ask.";
+const SAMPLE_PROMPTS = [
+  { label: 'Swap', prompt: 'I want to swap some ETH for USDC. What do I need to do?' },
+  { label: 'Stake', prompt: 'How does staking work here? What can I stake?' },
+  { label: 'Yield', prompt: 'Where can I earn yield on my assets?' },
+] as const;
+
 export default function Chat() {
-  const { authenticated } = usePrivy();
+  const { authenticated, getAccessToken } = usePrivy();
   const executeSwap = useSwap();
+  const executeSolanaSwap = useSolanaSwap();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isExecutingSwap, setIsExecutingSwap] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -59,11 +73,22 @@ export default function Chat() {
       return parseCandidate(trimmed.slice(firstBrace, lastBrace + 1));
     }
 
+    // JSON inside markdown code block (e.g. ```json ... ```)
+    const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      const inner = codeBlockMatch[1].trim();
+      const innerFirst = inner.indexOf('{');
+      const innerLast = inner.lastIndexOf('}');
+      if (innerFirst >= 0 && innerLast > innerFirst) {
+        return parseCandidate(inner.slice(innerFirst, innerLast + 1));
+      }
+    }
+
     return null;
   };
 
 
-  const maybeExecuteSwapIntent = async (aiResponse: string) => {
+  const maybeExecuteSwapIntent = async (aiResponse: string): Promise<{ message: string; txHash?: string; chain?: string; sellToken?: string; buyToken?: string; amount?: string } | null> => {
     const intent = extractSwapIntent(aiResponse);
     if (!intent || intent.type !== 'SWAP_INTENT') return null;
 
@@ -71,60 +96,121 @@ export default function Chat() {
     const buy = intent.buy?.toUpperCase();
     const amount = typeof intent.amount === 'number' ? intent.amount.toString() : intent.amount;
 
-    if (!amount || Number(amount) <= 0) {
+    if (!amount || Number(amount) <= 0 || !sell || !buy) {
+      return null;
+    }
+
+    const selectedChain = resolveSelectedChain();
+    const SUPPORTED_SELL = selectedChain === 'SOLANA_MAINNET' ? ['SOL', 'USDC', 'JUP', 'RAY', 'KMNO', 'DRIFT', 'W'] : ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
+    const SUPPORTED_BUY = selectedChain === 'SOLANA_MAINNET' ? ['SOL', 'USDC', 'JUP', 'RAY', 'KMNO', 'DRIFT', 'W'] : ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
+    if (!SUPPORTED_SELL.includes(sell) || !SUPPORTED_BUY.includes(buy)) {
       return null;
     }
 
     setIsExecutingSwap(true);
     try {
-      if (sell === 'ETH' && buy === 'WETH') {
-        const txHash = await executeSwap(sell, amount, buy);
-        return `Swap executed: wrapped ${amount} ETH into WETH.\n${txHash}`;
+      const txHash = selectedChain === 'SOLANA_MAINNET'
+        ? await executeSolanaSwap(sell, amount, buy)
+        : await executeSwap(sell, amount, buy);
+      const action = sell === 'ETH' && buy === 'WETH' ? 'wrapped' : 'swapped';
+      const msg = `Swap executed: ${action} ${amount} ${sell} for ${buy}.\n${txHash}`;
+      const chain = typeof window !== 'undefined' ? localStorage.getItem('selectedChain') ?? undefined : undefined;
+      return { message: msg, txHash, chain, sellToken: sell, buyToken: buy, amount };
+    } catch (err) {
+      console.error('[Swap execution failed]', err);
+      const rawMsg = err instanceof Error ? err.message : 'Swap failed';
+      const isInsufficientFunds =
+        rawMsg.toLowerCase().includes('insufficient funds') ||
+        (err as { code?: string })?.code === 'INSUFFICIENT_FUNDS';
+      const isReplacementUnderpriced =
+        rawMsg.toLowerCase().includes('replacement') ||
+        rawMsg.toLowerCase().includes('underpriced') ||
+        (err as { code?: string })?.code === 'REPLACEMENT_UNDERPRICED';
+      let msg = rawMsg;
+      if (isInsufficientFunds) {
+        msg =
+          'Your wallet doesn’t have enough ETH on this network (for the swap and gas). Get testnet ETH from a faucet (Base Sepolia) or add more ETH on mainnet.';
+      } else if (isReplacementUnderpriced) {
+        msg =
+          'A previous transaction may still be pending. Wait a minute and try again, or use Base Sepolia testnet (network selector → Base Testnet) to test with faucet ETH.';
       }
-
-      if (sell === 'ETH' && buy === 'USDC') {
-        const txHash = await executeSwap(sell, amount, buy);
-        return `Swap executed: swapped ${amount} ETH for USDC.\n${txHash}`;
-      }
-
-      return null;
+      return { message: `Swap could not be executed: ${msg}` };
     } finally {
       setIsExecutingSwap(false);
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!input.trim() || isLoading || isExecutingSwap) return;
+  const sendMessage = async (userMessage: string) => {
+    if (!userMessage.trim() || isLoading || isExecutingSwap) return;
 
-    const userMessage = input;
-    setInput('');
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+    setMessages((prev) => [...prev, { role: 'user', content: userMessage.trim() }]);
     setIsLoading(true);
 
     try {
+      let accessToken: string | null = null;
+      if (typeof getAccessToken === 'function') {
+        try {
+          accessToken = (await getAccessToken()) ?? null;
+        } catch {
+          accessToken = null;
+        }
+      }
+      if (!accessToken && typeof window !== 'undefined') {
+        accessToken = localStorage.getItem('privy:token');
+      }
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
-          message: userMessage,
+          message: userMessage.trim(),
           history: messages.map(m => ({ role: m.role, content: m.content })),
-          // Include Privy access token if available in localStorage (Privy stores it for the session)
-          accessToken: localStorage.getItem('privy:token') ?? null,
+          accessToken,
+          selectedChain: resolveSelectedChain(),
         }),
       });
 
       const data = await response.json();
-      
-      const executionNote = await maybeExecuteSwapIntent(data.content);
-      if (executionNote) {
+
+      const executionResult = await maybeExecuteSwapIntent(data.content);
+      if (executionResult) {
         console.log('[Swap Intent]', data.content);
+        if (executionResult.txHash && executionResult.chain && executionResult.sellToken && executionResult.buyToken && executionResult.amount) {
+          try {
+            const recordRes = await fetch('/api/record-swap', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({
+                accessToken,
+                chain: executionResult.chain,
+                sellToken: executionResult.sellToken,
+                buyToken: executionResult.buyToken,
+                sellAmount: executionResult.amount,
+                txHash: executionResult.txHash,
+              }),
+            });
+            const recordData = await recordRes.json().catch(() => ({}));
+            if (recordRes.ok && recordData?.ok) {
+              console.log('[0G] Swap recorded:', recordData.backend ?? 'storage', executionResult.txHash);
+            } else if (!recordRes.ok) {
+              console.warn('Failed to record swap to 0G:', recordData?.error ?? recordRes.status);
+            }
+          } catch (recordErr) {
+            console.warn('Failed to record swap to 0G:', recordErr);
+          }
+        }
       }
 
       setMessages((prev) => {
-        if (executionNote) {
-          return [...prev, { role: 'assistant', content: executionNote }];
+        if (executionResult) {
+          const txExplorerUrl =
+            executionResult.txHash && executionResult.chain && executionResult.chain in CHAINS
+              ? getExplorerTxUrl(executionResult.chain as ChainKey, executionResult.txHash)
+              : null;
+          return [...prev, { role: 'assistant', content: executionResult.message, txExplorerUrl }];
         }
-
         return [
           ...prev,
           {
@@ -136,10 +222,17 @@ export default function Chat() {
         ];
       });
     } catch (error) {
-      console.error("Chat error:", error);
+      console.error('Chat error:', error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSendMessage = async () => {
+    if (!input.trim() || isLoading || isExecutingSwap) return;
+    const userMessage = input;
+    setInput('');
+    await sendMessage(userMessage);
   };
 
   return (
@@ -158,7 +251,24 @@ export default function Chat() {
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-hide">
         {messages.length === 0 && (
-          <p className="text-gray-500 text-center mt-20">Ask me to swap ETH for USDC or check your balance...</p>
+          <div className="flex flex-col items-center mt-12 max-w-md mx-auto text-center">
+            <p className="text-gray-200 text-sm leading-relaxed mb-6">
+              {WELCOME_MESSAGE}
+            </p>
+            <div className="flex flex-col gap-3 w-full max-w-xs mx-auto">
+              {SAMPLE_PROMPTS.map(({ label, prompt }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => sendMessage(prompt)}
+                  disabled={isLoading || isExecutingSwap}
+                  className="w-full px-4 py-3 rounded-xl text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {messages.map((m, i) => (
           m.role === 'assistant' ? (
@@ -177,7 +287,23 @@ export default function Chat() {
                     color: CHAT_PANEL.agent_chat_text_color,
                   }}
                 >
-                  {m.content}
+                  {m.txExplorerUrl && m.content.includes('\n') ? (
+                    <>
+                      {m.content.split('\n').slice(0, -1).join('\n')}
+                      {'\n'}
+                      <a
+                        href={m.txExplorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[var(--chat-highlight-color)] hover:underline"
+                        style={{ ['--chat-highlight-color' as string]: CHAT_PANEL.chat_highlight_color ?? '#676FFF' }}
+                      >
+                        {m.content.split('\n').slice(-1)[0]}
+                      </a>
+                    </>
+                  ) : (
+                    m.content
+                  )}
                 </div>
                 {m.zgHash && !m.zgError && (
                   <div className="flex items-center gap-2 mt-1">
@@ -233,10 +359,11 @@ export default function Chat() {
         }}
       >
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-          placeholder="I want to swap 0.1 ETH for USDC..."
+          placeholder="Swap, stake, yield — or ask anything..."
           className="flex-1 bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-[var(--chat-highlight-color)] transition-colors"
           style={{ ['--chat-highlight-color' as never]: CHAT_PANEL.chat_highlight_color }}
         />
