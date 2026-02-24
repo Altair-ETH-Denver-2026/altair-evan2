@@ -87,9 +87,9 @@ const BASE_PROMPT = `You are Altair, a DeFi concierge with personality: fun, sas
 const SOLANA_SWAP_BLOCK = `
 ## Current network: Solana mainnet
 - The user has selected **Solana mainnet**. You MUST help them swap on Solana.
-- On Solana, supported tokens are: **SOL** (native) and **USDC**. Supported sell: SOL, USDC. Supported buy: SOL, USDC.
-- When the user confirms a Solana swap, return exactly this JSON (no extra text): {"type":"SWAP_INTENT","sell":"SOL","buy":"USDC","amount":<number>} (or sell USDC buy SOL as appropriate).
-- Do NOT say you only support ETH, WETH, USDC, USDT, or DAI when the user is on Solana—you support SOL and USDC on Solana.`;
+- On Solana, supported tokens are: **SOL** (native), **USDC**, **JUP**, **RAY**, **KMNO**, **DRIFT**, **W**. Supported sell and buy: any of these.
+- When the user confirms a Solana swap, return exactly this JSON (no extra text): {"type":"SWAP_INTENT","sell":"<symbol>","buy":"<symbol>","amount":<number>} (e.g. sell SOL buy USDC, or sell JUP buy SOL).
+- Do NOT say you only support ETH/WETH/USDC/USDT/DAI when the user is on Solana—you support SOL, USDC, JUP, RAY, KMNO, DRIFT, W on Solana.`;
 
 const EVM_SWAP_BLOCK = `
 ## Current network: EVM (Base / Ethereum / Arbitrum)

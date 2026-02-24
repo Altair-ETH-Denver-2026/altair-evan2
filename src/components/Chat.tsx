@@ -8,6 +8,8 @@ import Logo from '../image/logo.png';
 import { usePrivy } from '@privy-io/react-auth';
 import { useSwap, resolveSelectedChain } from '../lib/useSwap';
 import { useSolanaSwap } from '../lib/useSolanaSwap';
+import { getExplorerTxUrl } from '../lib/explorer_links';
+import { CHAINS, type ChainKey } from '../../config/blockchain_config';
 import { CHAT_PANEL } from '../../config/ui_config';
 
 interface Message {
@@ -15,6 +17,8 @@ interface Message {
   content: string;
   zgHash?: string | null;
   zgError?: string | null;
+  /** When set, the last line of content is rendered as a link to this tx URL (Solana: solscan.io, EVM: etherscan/basescan/arbiscan). */
+  txExplorerUrl?: string | null;
 }
 
 interface SwapIntent {
@@ -97,8 +101,8 @@ export default function Chat() {
     }
 
     const selectedChain = resolveSelectedChain();
-    const SUPPORTED_SELL = selectedChain === 'SOLANA_MAINNET' ? ['SOL', 'USDC'] : ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
-    const SUPPORTED_BUY = selectedChain === 'SOLANA_MAINNET' ? ['SOL', 'USDC'] : ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
+    const SUPPORTED_SELL = selectedChain === 'SOLANA_MAINNET' ? ['SOL', 'USDC', 'JUP', 'RAY', 'KMNO', 'DRIFT', 'W'] : ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
+    const SUPPORTED_BUY = selectedChain === 'SOLANA_MAINNET' ? ['SOL', 'USDC', 'JUP', 'RAY', 'KMNO', 'DRIFT', 'W'] : ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
     if (!SUPPORTED_SELL.includes(sell) || !SUPPORTED_BUY.includes(buy)) {
       return null;
     }
@@ -174,7 +178,7 @@ export default function Chat() {
         console.log('[Swap Intent]', data.content);
         if (executionResult.txHash && executionResult.chain && executionResult.sellToken && executionResult.buyToken && executionResult.amount) {
           try {
-            await fetch('/api/record-swap', {
+            const recordRes = await fetch('/api/record-swap', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               credentials: 'include',
@@ -187,6 +191,12 @@ export default function Chat() {
                 txHash: executionResult.txHash,
               }),
             });
+            const recordData = await recordRes.json().catch(() => ({}));
+            if (recordRes.ok && recordData?.ok) {
+              console.log('[0G] Swap recorded:', recordData.backend ?? 'storage', executionResult.txHash);
+            } else if (!recordRes.ok) {
+              console.warn('Failed to record swap to 0G:', recordData?.error ?? recordRes.status);
+            }
           } catch (recordErr) {
             console.warn('Failed to record swap to 0G:', recordErr);
           }
@@ -195,7 +205,11 @@ export default function Chat() {
 
       setMessages((prev) => {
         if (executionResult) {
-          return [...prev, { role: 'assistant', content: executionResult.message }];
+          const txExplorerUrl =
+            executionResult.txHash && executionResult.chain && executionResult.chain in CHAINS
+              ? getExplorerTxUrl(executionResult.chain as ChainKey, executionResult.txHash)
+              : null;
+          return [...prev, { role: 'assistant', content: executionResult.message, txExplorerUrl }];
         }
         return [
           ...prev,
@@ -273,7 +287,23 @@ export default function Chat() {
                     color: CHAT_PANEL.agent_chat_text_color,
                   }}
                 >
-                  {m.content}
+                  {m.txExplorerUrl && m.content.includes('\n') ? (
+                    <>
+                      {m.content.split('\n').slice(0, -1).join('\n')}
+                      {'\n'}
+                      <a
+                        href={m.txExplorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[var(--chat-highlight-color)] hover:underline"
+                        style={{ ['--chat-highlight-color' as string]: CHAT_PANEL.chat_highlight_color ?? '#676FFF' }}
+                      >
+                        {m.content.split('\n').slice(-1)[0]}
+                      </a>
+                    </>
+                  ) : (
+                    m.content
+                  )}
                 </div>
                 {m.zgHash && !m.zgError && (
                   <div className="flex items-center gap-2 mt-1">

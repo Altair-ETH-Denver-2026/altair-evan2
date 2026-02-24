@@ -4,9 +4,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useSwap, useWithdraw } from '../lib/useSwap';
 import { ethers } from 'ethers';
-import { UserRound, LogOut, Settings, Wallet, Wrench, Copy, Globe2, Check, ArrowUpRight } from 'lucide-react';
+import { UserRound, LogOut, Settings, Wallet, Wrench, Copy, Globe2, Check, ArrowUpRight, ChevronDown, ChevronUp } from 'lucide-react';
 import { useEffect as useClientEffect, useState as useClientState } from 'react';
 import { BLOCKCHAIN, CHAINS, isSolanaChain, type ChainKey } from '../../config/blockchain_config';
+import { SOLANA_WALLET_DISPLAY_SYMBOLS } from '../../config/token_info/solana_tokens';
 import { BALANCE_DECIMALS, MENU_ICONS, WALLET_DISPLAY, X_SIZE } from '../../config/ui_config';
 
 /** Chains shown in the wallet dropdown with their display labels. */
@@ -17,7 +18,7 @@ const WALLET_DROPDOWN_CHAINS: { key: ChainKey; label: string }[] = [
   { key: 'ARBITRUM_ONE', label: 'Arbitrum Mainnet' },
 ];
 
-type ChainBalance = { address: string; eth: string; usdc: string };
+type ChainBalance = { address: string; eth: string; usdc: string; [symbol: string]: string };
 
 export default function UserMenu() {
   const { logout, authenticated } = usePrivy();
@@ -41,9 +42,16 @@ export default function UserMenu() {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [tokensExpandedByChain, setTokensExpandedByChain] = useClientState<Partial<Record<ChainKey, boolean>>>(() =>
+    WALLET_DROPDOWN_CHAINS.reduce<Partial<Record<ChainKey, boolean>>>((acc, { key }) => ({ ...acc, [key]: true }), {})
+  );
   const menuRef = useRef<HTMLDivElement>(null);
   const isWalletDropDown = WALLET_DISPLAY.active === 'drop_down';
   const isWalletPanel = WALLET_DISPLAY.active === 'panel';
+
+  const toggleChainTokens = (key: ChainKey) => {
+    setTokensExpandedByChain((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -138,7 +146,7 @@ export default function UserMenu() {
               signal: controller.signal,
             });
             const data = await res.json().catch(() => ({}));
-            return { key, data: data?.address != null ? { address: data.address, eth: data.eth ?? '0', usdc: data.usdc ?? '0' } as ChainBalance : null };
+            return { key, data: data?.address != null ? { ...data, address: data.address, eth: data.eth ?? '0', usdc: data.usdc ?? '0' } as ChainBalance : null };
           })
         );
         setChainBalances((prev) => {
@@ -157,8 +165,22 @@ export default function UserMenu() {
   if (!authenticated) return null;
 
   const truncateAddress = (addr: string) => (addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '—');
-  const hasNonZero = (n: string) => Number(n) > 0;
   const fmtBal = (n: string) => (Number.isNaN(Number(n)) ? n : Number(n).toFixed(BALANCE_DECIMALS));
+
+  /** Token symbols to show per chain; always show all (including 0 balance). */
+  const getTokenEntries = (key: ChainKey, bal: ChainBalance | null | undefined): { symbol: string; value: string }[] => {
+    if (isSolanaChain(key)) {
+      return SOLANA_WALLET_DISPLAY_SYMBOLS.map((sym) => ({
+        symbol: sym,
+        value: sym === 'SOL' ? (bal?.eth ?? '0') : (bal?.[sym] ?? '0'),
+      }));
+    }
+    const nativeSymbol = 'ETH';
+    return [
+      { symbol: nativeSymbol, value: bal?.eth ?? '0' },
+      { symbol: 'USDC', value: bal?.usdc ?? '0' },
+    ];
+  };
 
   const showSwapMessage = (message: { type: 'success' | 'error'; text: string }) => {
     setSwapMessage(message);
@@ -370,7 +392,8 @@ export default function UserMenu() {
           <div className="absolute right-0 mt-3 w-72 max-h-[70vh] overflow-y-auto rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] flex flex-col">
             {WALLET_DROPDOWN_CHAINS.map(({ key, label }) => {
               const bal = chainBalances[key];
-              const nativeSymbol = isSolanaChain(key) ? 'SOL' : 'ETH';
+              const isExpanded = tokensExpandedByChain[key] !== false;
+              const entries = getTokenEntries(key, bal);
               return (
                 <div key={key} className="border-b border-gray-700 last:border-b-0">
                   <div className="px-3 pt-2 pb-1 text-xs font-medium text-gray-500">{label}</div>
@@ -386,24 +409,23 @@ export default function UserMenu() {
                     <span className="text-gray-100 pl-2 flex-1 text-sm truncate" title={bal?.address ?? '—'}>
                       {bal ? truncateAddress(bal.address) : '—'}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleChainTokens(key)}
+                      className="p-1 text-gray-400 hover:text-gray-200"
+                      aria-label={isExpanded ? 'Collapse tokens' : 'Expand tokens'}
+                    >
+                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
                   </div>
-                  {bal && (
+                  {isExpanded && (
                     <div className="px-4 pb-2 flex flex-col gap-1">
-                      {hasNonZero(bal.eth) && (
-                        <div className="flex justify-between text-sm text-gray-300">
-                          <span>{nativeSymbol}</span>
-                          <span className="text-gray-100" title={bal.eth}>{fmtBal(bal.eth)}</span>
+                      {entries.map(({ symbol, value }) => (
+                        <div key={symbol} className="flex justify-between text-sm text-gray-300">
+                          <span>{symbol}</span>
+                          <span className="text-gray-100" title={value}>{fmtBal(value)}</span>
                         </div>
-                      )}
-                      {hasNonZero(bal.usdc) && (
-                        <div className="flex justify-between text-sm text-gray-300">
-                          <span>USDC</span>
-                          <span className="text-gray-100" title={bal.usdc}>{fmtBal(bal.usdc)}</span>
-                        </div>
-                      )}
-                      {!hasNonZero(bal.eth) && !hasNonZero(bal.usdc) && (
-                        <div className="text-xs text-gray-500">No balance</div>
-                      )}
+                      ))}
                     </div>
                   )}
                 </div>
@@ -443,7 +465,8 @@ export default function UserMenu() {
           </button>
           {WALLET_DROPDOWN_CHAINS.map(({ key, label }) => {
             const bal = chainBalances[key];
-            const nativeSymbol = isSolanaChain(key) ? 'SOL' : 'ETH';
+            const isExpanded = tokensExpandedByChain[key] !== false;
+            const entries = getTokenEntries(key, bal);
             return (
               <div key={key} className="border-b border-gray-700 last:border-b-0 px-4 py-3">
                 <div className="text-xs font-medium text-gray-500 mb-2">{label}</div>
@@ -459,24 +482,23 @@ export default function UserMenu() {
                   <span className="text-gray-100 pl-2 flex-1 text-sm truncate" title={bal?.address ?? '—'}>
                     {bal ? truncateAddress(bal.address) : '—'}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => toggleChainTokens(key)}
+                    className="p-1 text-gray-400 hover:text-gray-200"
+                    aria-label={isExpanded ? 'Collapse tokens' : 'Expand tokens'}
+                  >
+                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
                 </div>
-                {bal && (
+                {isExpanded && (
                   <div className="flex flex-col gap-1 pl-6">
-                    {hasNonZero(bal.eth) && (
-                      <div className="flex justify-between text-sm text-gray-300">
-                        <span>{nativeSymbol}</span>
-                        <span className="text-gray-100" title={bal.eth}>{fmtBal(bal.eth)}</span>
+                    {entries.map(({ symbol, value }) => (
+                      <div key={symbol} className="flex justify-between text-sm text-gray-300">
+                        <span>{symbol}</span>
+                        <span className="text-gray-100" title={value}>{fmtBal(value)}</span>
                       </div>
-                    )}
-                    {hasNonZero(bal.usdc) && (
-                      <div className="flex justify-between text-sm text-gray-300">
-                        <span>USDC</span>
-                        <span className="text-gray-100" title={bal.usdc}>{fmtBal(bal.usdc)}</span>
-                      </div>
-                    )}
-                    {!hasNonZero(bal.eth) && !hasNonZero(bal.usdc) && (
-                      <div className="text-xs text-gray-500">No balance</div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>

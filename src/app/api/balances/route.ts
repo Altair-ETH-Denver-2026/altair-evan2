@@ -5,7 +5,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { BLOCKCHAIN, CHAINS, isSolanaChain, type ChainKey, type EvmChainKey } from '../../../../config/blockchain_config';
 import { ARBITRUM_ONE, BASE_MAINNET, BASE_SEPOLIA, ETH_MAINNET, ETH_SEPOLIA, resolveRpcUrls } from '../../../../config/chain_info';
 import { SOLANA_MAINNET } from '../../../../config/solana_config';
-import { SOLANA_MAINNET_TOKENS } from '../../../../config/token_info/solana_tokens';
+import { SOLANA_MAINNET_TOKENS, SOLANA_WALLET_DISPLAY_SYMBOLS } from '../../../../config/token_info/solana_tokens';
 import { USDC as BASE_USDC, WETH as BASE_WETH } from '../../../../config/token_info/base_tokens';
 import { USDC as BASE_SEPOLIA_USDC, WETH as BASE_SEPOLIA_WETH } from '../../../../config/token_info/base_testnet_sepolia_tokens';
 import { USDC as ETH_USDC, WETH as ETH_WETH } from '../../../../config/token_info/eth_tokens';
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
     const resolvedChainKey: ChainKey =
       chainKey && chainKey in CHAINS ? chainKey : (BLOCKCHAIN as ChainKey);
 
-    // --- Solana: SOL + USDC (SPL) ---
+    // --- Solana: SOL + all display tokens (USDC, JUP, RAY, KMNO, DRIFT, W) ---
     if (isSolanaChain(resolvedChainKey)) {
       const solanaAddress = tokenToVerify
         ? await getPrivySolanaWalletAddress(tokenToVerify)
@@ -59,25 +59,32 @@ export async function POST(req: Request) {
       }
       const connection = new Connection(SOLANA_MAINNET.rpcUrl);
       const pubkey = new PublicKey(solanaAddress);
-      const [solLamports, tokenAccounts] = await Promise.all([
+      const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+      const [solLamports, tokenAccountsRes] = await Promise.all([
         connection.getBalance(pubkey),
-        connection.getParsedTokenAccountsByOwner(pubkey, {
-          mint: new PublicKey(SOLANA_MAINNET_TOKENS.USDC.address),
-        }),
+        connection.getParsedTokenAccountsByOwner(pubkey, { programId: TOKEN_PROGRAM_ID }),
       ]);
       const solBalance = (solLamports / 1e9).toFixed(9);
-      let usdc = '0';
-      if (tokenAccounts.value.length > 0) {
-        const info = tokenAccounts.value[0].account.data.parsed?.info;
-        if (info?.tokenAmount?.uiAmount != null) {
-          usdc = String(info.tokenAmount.uiAmount);
+      const mintToBalance: Record<string, string> = {};
+      for (const { account } of tokenAccountsRes.value) {
+        const info = account.data?.parsed?.info;
+        const mint = info?.mint as string | undefined;
+        const uiAmount = info?.tokenAmount?.uiAmount;
+        if (mint && uiAmount != null) {
+          mintToBalance[mint] = String(uiAmount);
         }
       }
-      return NextResponse.json({
+      const out: Record<string, string> = {
         address: solanaAddress,
         eth: solBalance,
-        usdc,
-      });
+        usdc: mintToBalance[SOLANA_MAINNET_TOKENS.USDC.address] ?? '0',
+      };
+      for (const sym of SOLANA_WALLET_DISPLAY_SYMBOLS) {
+        if (sym === 'SOL' || sym === 'USDC') continue;
+        const token = SOLANA_MAINNET_TOKENS[sym];
+        if (token) out[sym] = mintToBalance[token.address] ?? '0';
+      }
+      return NextResponse.json(out);
     }
 
     const addressToQuery = (overrideAddress
