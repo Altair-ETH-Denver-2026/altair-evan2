@@ -131,16 +131,13 @@ export default function Chat() {
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!input.trim() || isLoading || isExecutingSwap) return;
+  const sendMessage = async (userMessage: string) => {
+    if (!userMessage.trim() || isLoading || isExecutingSwap) return;
 
-    const userMessage = input;
-    setInput('');
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+    setMessages((prev) => [...prev, { role: 'user', content: userMessage.trim() }]);
     setIsLoading(true);
 
     try {
-      // Prefer Privy SDK access token (refreshes if needed); fallback to localStorage for legacy/cookie-only flows
       let accessToken: string | null = null;
       if (typeof getAccessToken === 'function') {
         try {
@@ -158,7 +155,7 @@ export default function Chat() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          message: userMessage,
+          message: userMessage.trim(),
           history: messages.map(m => ({ role: m.role, content: m.content })),
           accessToken,
         }),
@@ -194,7 +191,6 @@ export default function Chat() {
         if (executionResult) {
           return [...prev, { role: 'assistant', content: executionResult.message }];
         }
-
         return [
           ...prev,
           {
@@ -206,10 +202,17 @@ export default function Chat() {
         ];
       });
     } catch (error) {
-      console.error("Chat error:", error);
+      console.error('Chat error:', error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSendMessage = async () => {
+    if (!input.trim() || isLoading || isExecutingSwap) return;
+    const userMessage = input;
+    setInput('');
+    await sendMessage(userMessage);
   };
 
   return (
@@ -232,16 +235,14 @@ export default function Chat() {
             <p className="text-gray-200 text-sm leading-relaxed mb-6">
               {WELCOME_MESSAGE}
             </p>
-            <div className="flex flex-wrap gap-2 justify-center">
+            <div className="flex flex-col gap-3 w-full max-w-xs mx-auto">
               {SAMPLE_PROMPTS.map(({ label, prompt }) => (
                 <button
                   key={label}
                   type="button"
-                  onClick={() => {
-                    setInput(prompt);
-                    inputRef.current?.focus();
-                  }}
-                  className="px-4 py-2 rounded-xl text-sm font-medium transition-colors border border-gray-600 text-gray-200 hover:bg-gray-700/80 hover:border-gray-500"
+                  onClick={() => sendMessage(prompt)}
+                  disabled={isLoading || isExecutingSwap}
+                  className="w-full px-4 py-3 rounded-xl text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:pointer-events-none transition-colors"
                 >
                   {label}
                 </button>
