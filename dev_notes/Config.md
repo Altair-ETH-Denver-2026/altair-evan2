@@ -26,7 +26,7 @@ This project centralizes runtime and UI configuration in the root-level [`config
   - `rpcUrls` (array; Alchemy first)
   - `scanUrl`
   - `uniswapAddresses` (`router`, `factory`, `swapRouter`)
-- `resolveRpcUrls(rpcUrls)`: replaces `ALCHEMY_API_KEY` placeholder using env vars.
+- `resolveRpcUrls(rpcUrls)`: replaces `NEXT_PUBLIC_ALCHEMY_API_KEY` placeholder using env vars.
 
 **Usage:**
 - RPC URL lists are resolved and used in [`balances` API](src/app/api/balances/route.ts:62) and [`test-swap` API](src/app/api/test-swap/route.ts:81).

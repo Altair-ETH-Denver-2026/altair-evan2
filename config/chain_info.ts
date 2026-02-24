@@ -1,4 +1,4 @@
-export const ALCHEMY_API_KEY_PLACEHOLDER = 'ALCHEMY_API_KEY';
+export const ALCHEMY_API_KEY_PLACEHOLDER = 'NEXT_PUBLIC_ALCHEMY_API_KEY';
 
 export const resolveRpcUrls = (rpcUrls: string[]) => {
   const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;

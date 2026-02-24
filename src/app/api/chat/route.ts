@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import OpenAI from 'openai';
 import { compactMemoryForPrompt, getUserMemory, parseMemoryValue, saveUserMemory } from '@/lib/zg-storage';
 
@@ -57,15 +58,21 @@ function buildUpdatedChatSummary(
 export async function POST(req: Request) {
   try {
     const { message, history, accessToken } = await req.json();
+    const cookieStore = await cookies();
+    const cookieToken = cookieStore.get('privy-token')?.value ?? null;
+    const resolvedAccessToken =
+      typeof accessToken === 'string' && accessToken.length > 0
+        ? accessToken
+        : (cookieToken ?? null);
 
     let zgHash: string | null = null;
     let zgError: string | null = null;
     let priorMemory: Record<string, unknown> | null = null;
 
     // Pre-read latest user-scoped memory and inject compact context into the system prompt.
-    if (typeof accessToken === 'string' && accessToken.length > 0) {
+    if (typeof resolvedAccessToken === 'string' && resolvedAccessToken.length > 0) {
       try {
-        const read = await getUserMemory({ key: 'chat_summary_latest', accessToken });
+        const read = await getUserMemory({ key: 'chat_summary_latest', accessToken: resolvedAccessToken });
         priorMemory = parseMemoryValue(read.value);
       } catch (readErr) {
         console.warn('0G pre-read memory failed:', readErr);
@@ -107,11 +114,11 @@ export async function POST(req: Request) {
     const executionNote: string | null = null;
 
     // Persist summary into user-scoped 0G memory.
-    if (typeof accessToken === 'string' && accessToken.length > 0) {
+    if (typeof resolvedAccessToken === 'string' && resolvedAccessToken.length > 0) {
       try {
         const write = await saveUserMemory({
           key: 'chat_summary_latest',
-          accessToken,
+          accessToken: resolvedAccessToken,
           value: JSON.stringify(buildUpdatedChatSummary(priorMemory, message, aiResponse)),
         });
         zgHash = write.rootHash ?? null;

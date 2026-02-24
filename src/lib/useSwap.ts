@@ -109,9 +109,9 @@ export const useSwap = (explicitChain?: ChainKey) => {
     const normalizedBuy = buyToken.toUpperCase();
     const amountWei = ethers.parseEther(sellAmount);
 
-    let effectiveSell = normalizedSell;
+    const effectiveSell = normalizedSell;
 
-    if (WRAP_ETH && normalizedSell === 'ETH') {
+    if (WRAP_ETH && normalizedSell === 'ETH' && normalizedBuy === 'WETH') {
       const weth = new ethers.Contract(
         tokenConfig.WETH.address,
         ['function deposit() payable'],
@@ -121,11 +121,7 @@ export const useSwap = (explicitChain?: ChainKey) => {
       const wrapTx = await weth.deposit({ value: amountWei });
       await wrapTx.wait();
 
-      if (normalizedBuy === 'WETH') {
-        return wrapTx.hash as string;
-      }
-
-      effectiveSell = 'WETH';
+      return wrapTx.hash as string;
     }
 
     const routeResponse = await fetch('/api/test-swap', {
