@@ -7,7 +7,7 @@ import UserMenu from '../components/UserMenu';
 import Chat from '../components/Chat';
 import Logo from '../image/logo.png';
 import { SpinningLogo } from '../components/SpinningLogo';
-import { HOME_ICON, MENU_ICONS } from '../../config/ui_config';
+import { HOME_ICON, MENU_ICONS, TITLE_PANEL } from '../../config/ui_config';
 
 export default function Home() {
   const { login, authenticated } = usePrivy();
@@ -49,13 +49,34 @@ export default function Home() {
 
       {/* Content Container */}
       <div className="w-full flex flex-col items-center gap-8">
-        <div className="flex items-center gap-4">
-          <SpinningLogo src={Logo} alt="Altair logo" className="h-23 w-auto" />
+        {/* TITLE_PANEL */}
+        <div
+          className="flex items-center gap-4"
+          style={{
+            marginLeft: `${TITLE_PANEL.x_offset * 4}px`,
+            marginTop: `${TITLE_PANEL.y_offset * 4}px`,
+          }}
+        >
+          <div style={{ height: `${TITLE_PANEL.logo_size * TITLE_PANEL.size * 4}px` }}>
+            <SpinningLogo src={Logo} alt="Altair logo" className="h-full w-auto" />
+          </div>
           <div className="text-left">
-            <h1 className="text-5xl font-extrabold mb-2 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
+            <h1
+              className="font-extrabold bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent"
+              style={{
+                fontSize: `${TITLE_PANEL.size * 3}rem`,
+                marginBottom: `${TITLE_PANEL.text_spacing * 4}px`,
+              }}
+            >
               Altair
             </h1>
-            <p className="text-gray-400 font-medium italic">
+            <p
+              className="font-medium italic"
+              style={{
+                color: TITLE_PANEL.text_color,
+                fontSize: `${TITLE_PANEL.size}rem`,
+              }}
+            >
               {authenticated ? "Your crypto trading assistant." : "Your concierge for DeFi on Base."}
             </p>
           </div>

@@ -225,20 +225,28 @@ export default function Chat() {
       </div>
 
       {/* Input Area */}
-      <div className="p-4 border-t border-gray-800 flex gap-2">
+      <div
+        className="p-4 border-t flex gap-2"
+        style={{
+          borderColor: CHAT_PANEL.border_color,
+          borderTopWidth: `${CHAT_PANEL.border_width}px`,
+        }}
+      >
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
           placeholder="I want to swap 0.1 ETH for USDC..."
-          className="flex-1 bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 transition-colors"
+          className="flex-1 bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-[var(--chat-highlight-color)] transition-colors"
+          style={{ ['--chat-highlight-color' as never]: CHAT_PANEL.chat_highlight_color }}
         />
         <button 
           onClick={handleSendMessage}
           disabled={isLoading || isExecutingSwap}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 p-2 rounded-xl transition-all cursor-pointer"
+          className="disabled:opacity-50 p-2 rounded-xl transition-all cursor-pointer"
+          style={{ backgroundColor: CHAT_PANEL.chat_button_container_color }}
         >
-          <Send className="w-5 h-5" />
+          <Send className="w-5 h-5" color={CHAT_PANEL.chat_button_icon_color} />
         </button>
       </div>
     </div>

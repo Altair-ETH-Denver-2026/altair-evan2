@@ -29,6 +29,15 @@ export const HOME_ICON = {
   size: 15,
 };
 
+export const TITLE_PANEL = {
+  x_offset: 0,
+  y_offset: 0,
+  logo_size: 23,
+  text_color: '#9ca3af',
+  size: 1,
+  text_spacing: -1,
+};
+
 export const CHAT_PANEL = {
   container_color: '#11182780',
   border_color: '#1f2937',
@@ -40,4 +49,7 @@ export const CHAT_PANEL = {
   width: 672,
   height: 500,
   agent_icon_border_color: '#374151',
+  chat_highlight_color: '#3b82f6',
+  chat_button_container_color: '#2563eb',
+  chat_button_icon_color: '#ffffff',
 };
