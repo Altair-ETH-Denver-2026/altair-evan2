@@ -2,7 +2,7 @@
 
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
-import { BLOCKCHAIN, CHAINS, WRAP_ETH, type ChainKey } from '../../config/blockchain_config';
+import { BLOCKCHAIN, CHAINS, WRAP_ETH, isSolanaChain, type ChainKey, type EvmChainKey } from '../../config/blockchain_config';
 import {
   ARBITRUM_ONE,
   BASE_MAINNET,
@@ -33,7 +33,7 @@ const tokenConfigs = {
   ARBITRUM_ONE: { WETH: ARBITRUM_WETH },
 } as const;
 
-const resolveSelectedChain = (explicitChain?: ChainKey) => {
+export const resolveSelectedChain = (explicitChain?: ChainKey) => {
   if (explicitChain) return explicitChain;
   if (typeof window === 'undefined') return BLOCKCHAIN;
   const stored = localStorage.getItem('selectedChain');
@@ -43,7 +43,7 @@ const resolveSelectedChain = (explicitChain?: ChainKey) => {
 
 const ensureEvmChain = async (
   ethereumProvider: ethers.Eip1193Provider,
-  chainKey: ChainKey,
+  chainKey: EvmChainKey,
 ) => {
   const chainConfig = chainConfigs[chainKey];
   console.log('[RPC] ensureEvmChain chainKey:', chainKey);
@@ -57,6 +57,7 @@ const ensureEvmChain = async (
     BASE_MAINNET: { name: 'Base Mainnet', explorer: 'https://basescan.org' },
     BASE_SEPOLIA: { name: 'Base Sepolia', explorer: 'https://sepolia.basescan.org' },
     ARBITRUM_ONE: { name: 'Arbitrum One', explorer: 'https://arbiscan.io' },
+    SOLANA_MAINNET: { name: 'Solana Mainnet', explorer: 'https://solscan.io' },
   };
 
   try {
@@ -100,17 +101,21 @@ export const useSwap = (explicitChain?: ChainKey) => {
     }
 
     const selectedChain = resolveSelectedChain(explicitChain);
+    if (isSolanaChain(selectedChain)) {
+      throw new Error('Use useSolanaSwap for Solana. Select an EVM chain or use the Solana swap flow.');
+    }
+    const evmChain = selectedChain as EvmChainKey;
     console.log('[RPC] selectedChain:', selectedChain);
-    const chainConfig = chainConfigs[selectedChain];
+    const chainConfig = chainConfigs[evmChain];
     console.log('[RPC] chainConfig rpcUrls:', chainConfig?.rpcUrls);
-    const tokenConfig = tokenConfigs[selectedChain];
+    const tokenConfig = tokenConfigs[evmChain];
     if (!chainConfig) {
       throw new Error('Unsupported chain configuration.');
     }
 
     const wallet = wallets[0];
     const ethereumProvider = await wallet.getEthereumProvider();
-    await ensureEvmChain(ethereumProvider, selectedChain);
+    await ensureEvmChain(ethereumProvider, evmChain);
 
     const provider = new ethers.BrowserProvider(ethereumProvider);
     const signer = await provider.getSigner();
@@ -194,13 +199,17 @@ export function useWithdraw(chainKey: ChainKey) {
     if (!authenticated || !wallets?.length) {
       throw new Error('No authenticated wallet available.');
     }
-    const chainConfig = chainConfigs[chainKey];
+    if (isSolanaChain(chainKey)) {
+      throw new Error('Withdraw is for EVM only. Solana is not supported.');
+    }
+    const evmChain = chainKey as EvmChainKey;
+    const chainConfig = chainConfigs[evmChain];
     if (!chainConfig) {
       throw new Error('Unsupported chain.');
     }
     const wallet = wallets[0];
     const ethereumProvider = await wallet.getEthereumProvider();
-    await ensureEvmChain(ethereumProvider, chainKey);
+    await ensureEvmChain(ethereumProvider, evmChain);
     const provider = new ethers.BrowserProvider(ethereumProvider);
     const signer = await provider.getSigner();
     const valueWei = ethers.parseEther(amountEth);

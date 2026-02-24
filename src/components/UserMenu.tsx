@@ -6,7 +6,7 @@ import { useSwap, useWithdraw } from '../lib/useSwap';
 import { ethers } from 'ethers';
 import { UserRound, LogOut, Settings, Wallet, Wrench, Copy, Globe2, Check, ArrowUpRight } from 'lucide-react';
 import { useEffect as useClientEffect, useState as useClientState } from 'react';
-import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../config/blockchain_config';
+import { BLOCKCHAIN, CHAINS, isSolanaChain, type ChainKey } from '../../config/blockchain_config';
 import { BALANCE_DECIMALS, MENU_ICONS, WALLET_DISPLAY, X_SIZE } from '../../config/ui_config';
 
 export default function UserMenu() {
@@ -78,7 +78,11 @@ export default function UserMenu() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ accessToken: token, chain: selectedChain, walletAddress: cachedAddress ?? undefined }),
+          body: JSON.stringify({
+          accessToken: token,
+          chain: selectedChain,
+          walletAddress: !isSolanaChain(selectedChain) ? (cachedAddress ?? undefined) : undefined,
+        }),
           signal: controller.signal,
         });
 
@@ -251,13 +255,9 @@ export default function UserMenu() {
         </button>
         {isNetworkOpen && (
           <div className="absolute right-0 mt-3 w-48 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] overflow-hidden flex flex-col">
-            {[{ label: 'ETH Mainnet', key: 'ETH_MAINNET' as ChainKey }, { label: 'Sepolia Testnet', key: 'ETH_SEPOLIA' as ChainKey }, { label: 'Base Mainnet', key: 'BASE_MAINNET' as ChainKey }, { label: 'Base Testnet', key: 'BASE_SEPOLIA' as ChainKey }, { label: 'Arbitrum One', key: 'ARBITRUM_ONE' as ChainKey }, { label: 'Solana (coming soon)', key: null as ChainKey | null }].map(({ label, key }) => {
+            {[{ label: 'ETH Mainnet', key: 'ETH_MAINNET' as ChainKey }, { label: 'Sepolia Testnet', key: 'ETH_SEPOLIA' as ChainKey }, { label: 'Base Mainnet', key: 'BASE_MAINNET' as ChainKey }, { label: 'Base Testnet', key: 'BASE_SEPOLIA' as ChainKey }, { label: 'Arbitrum One', key: 'ARBITRUM_ONE' as ChainKey }, { label: 'Solana Mainnet', key: 'SOLANA_MAINNET' as ChainKey }].map(({ label, key }) => {
               const isSelected = key ? selectedChain === key : false;
               const handleClick = () => {
-                if (!key) {
-                  setIsNetworkOpen(false);
-                  return;
-                }
                 setSelectedChain(key);
                 if (typeof window !== 'undefined') {
                   localStorage.setItem('selectedChain', key);
@@ -357,6 +357,7 @@ export default function UserMenu() {
               </span>
             </div>
             <div className="h-[1px] bg-gray-700 w-full" />
+            {!isSolanaChain(selectedChain) && (
             <button
               type="button"
               onClick={() => {
@@ -371,6 +372,7 @@ export default function UserMenu() {
               <ArrowUpRight className="w-4 h-4 mr-3" style={{ minWidth: 16 }} />
               <span className="flex-1">Withdraw</span>
             </button>
+            )}
           </div>
         )}
       </div>
@@ -403,7 +405,7 @@ export default function UserMenu() {
           </div>
           <div className="h-[1px] bg-gray-700 w-full" />
           <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300">
-            <span className="flex-1">ETH</span>
+            <span className="flex-1">{isSolanaChain(selectedChain) ? 'SOL' : 'ETH'}</span>
             <span
               className="text-gray-100 px-3 text-center whitespace-nowrap hover:whitespace-normal"
               title={ethBalance}
@@ -426,6 +428,7 @@ export default function UserMenu() {
             </span>
           </div>
           <div className="h-[1px] bg-gray-700 w-full" />
+          {!isSolanaChain(selectedChain) && (
           <button
             type="button"
             onClick={() => {
@@ -440,11 +443,12 @@ export default function UserMenu() {
             <ArrowUpRight className="w-4 h-4 mr-3" style={{ minWidth: 16 }} />
             <span className="flex-1">Withdraw</span>
           </button>
+          )}
         </div>
       )}
 
-      {/* Withdraw modal */}
-      {isWithdrawOpen && (
+      {/* Withdraw modal (EVM only) */}
+      {isWithdrawOpen && !isSolanaChain(selectedChain) && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60" onClick={() => !isWithdrawing && setIsWithdrawOpen(false)}>
           <div
             className="w-full max-w-md rounded-xl bg-gray-900 border border-gray-700 shadow-2xl p-5"

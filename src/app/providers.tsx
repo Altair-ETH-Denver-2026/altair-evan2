@@ -1,6 +1,7 @@
 'use client';
 
 import { PrivyProvider } from '@privy-io/react-auth';
+import { toSolanaWalletConnectors } from '@privy-io/react-auth/solana';
 import { base, baseSepolia, mainnet, sepolia } from 'viem/chains';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
@@ -18,10 +19,15 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           theme: 'dark',
           accentColor: '#676FFF', // Altair purple/blue
           showWalletLoginFirst: false,
+          walletChainType: 'ethereum-and-solana',
         },
-        // This is key: it creates a wallet for email/google users automatically
         defaultChain: base,
         supportedChains: [base, baseSepolia, sepolia, mainnet],
+        externalWallets: {
+          solana: {
+            connectors: toSolanaWalletConnectors(),
+          },
+        },
       }}
     >
       {children}

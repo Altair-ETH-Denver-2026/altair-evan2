@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../../../config/blockchain_config';
+import { BLOCKCHAIN, CHAINS, isSolanaChain, type ChainKey } from '../../../../config/blockchain_config';
 import {
   ARBITRUM_ONE,
   BASE_MAINNET,
@@ -8,12 +8,14 @@ import {
   ETH_SEPOLIA,
   resolveRpcUrls,
 } from '../../../../config/chain_info';
+import { SOLANA_MAINNET } from '../../../../config/solana_config';
 import type { ChainTokens } from '../../../../config/token_info/types';
 import { BASE_MAINNET_TOKENS } from '../../../../config/token_info/base_tokens';
 import { BASE_SEPOLIA_TOKENS } from '../../../../config/token_info/base_testnet_sepolia_tokens';
 import { ETH_MAINNET_TOKENS } from '../../../../config/token_info/eth_tokens';
 import { ETH_SEPOLIA_TOKENS } from '../../../../config/token_info/eth_sepolia_testnet_tokens';
 import { ARBITRUM_ONE_TOKENS } from '../../../../config/token_info/arbitrum_tokens';
+import { SOLANA_MAINNET_TOKENS } from '../../../../config/token_info/solana_tokens';
 
 function applyTokenEnvOverrides(chainKey: ChainKey, tokens: ChainTokens): ChainTokens {
   const out = { ...tokens };
@@ -65,14 +67,6 @@ export async function POST(req: Request) {
     const resolvedChainKey: ChainKey =
       requestedChain && requestedChain in CHAINS ? requestedChain : (BLOCKCHAIN as ChainKey);
 
-    const chainConfig = chainConfigs[resolvedChainKey as keyof typeof chainConfigs];
-    if (!chainConfig) {
-      return NextResponse.json({ error: 'Unsupported chain' }, { status: 400 });
-    }
-
-    let tokenConfig = tokenMaps[resolvedChainKey as keyof typeof tokenMaps];
-    tokenConfig = applyTokenEnvOverrides(resolvedChainKey, tokenConfig);
-
     if (!amount || !recipient) {
       return NextResponse.json({ error: 'Missing amount or recipient' }, { status: 400 });
     }
@@ -82,6 +76,85 @@ export async function POST(req: Request) {
     if (!normalizedBuyToken || !normalizedSellToken) {
       return NextResponse.json({ error: 'Missing buy or sell token' }, { status: 400 });
     }
+
+    // --- Solana: 0x swap-instructions ---
+    if (isSolanaChain(resolvedChainKey)) {
+      const tokenConfig = SOLANA_MAINNET_TOKENS;
+      const supportedSell = normalizedSellToken === 'SOL' || tokenConfig[normalizedSellToken];
+      const supportedBuy = normalizedBuyToken === 'SOL' || !!tokenConfig[normalizedBuyToken];
+      if (!supportedSell || !supportedBuy) {
+        return NextResponse.json(
+          {
+            error: `Unsupported Solana token pair. Sell/buy must be SOL or one of: ${Object.keys(tokenConfig).join(', ')}.`,
+          },
+          { status: 400 }
+        );
+      }
+      const tokenInMint = normalizedSellToken === 'SOL' ? tokenConfig.SOL.address : tokenConfig[normalizedSellToken]?.address;
+      const tokenOutMint = normalizedBuyToken === 'SOL' ? tokenConfig.SOL.address : tokenConfig[normalizedBuyToken]?.address;
+      if (!tokenInMint || !tokenOutMint) {
+        return NextResponse.json({ error: 'Invalid Solana token mint' }, { status: 400 });
+      }
+      const sellTokenInfo = tokenConfig[normalizedSellToken] ?? tokenConfig.SOL;
+      const decimals = sellTokenInfo?.decimals ?? 9;
+      const amountHuman = Number(amount);
+      const amountInRaw = Math.floor(amountHuman * 10 ** decimals);
+      const zeroXApiKey = process.env.ZEROX_API_KEY;
+      if (!zeroXApiKey) {
+        return NextResponse.json(
+          { error: 'ZEROX_API_KEY is required for 0x Solana swap. Set it in .env.' },
+          { status: 500 }
+        );
+      }
+      const solanaRes = await fetch('https://api.0x.org/solana/swap-instructions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          '0x-api-key': zeroXApiKey,
+        },
+        body: JSON.stringify({
+          token_in: tokenInMint,
+          token_out: tokenOutMint,
+          amount_in: amountInRaw,
+          slippage_bps: 50,
+          taker: recipient,
+        }),
+      });
+      if (!solanaRes.ok) {
+        const errText = await solanaRes.text();
+        return NextResponse.json(
+          { error: `0x Solana quote failed: ${errText}` },
+          { status: 500 }
+        );
+      }
+      const solanaPayload = (await solanaRes.json()) as { instructions?: unknown[]; amount_out?: number };
+      if (!solanaPayload?.instructions || !Array.isArray(solanaPayload.instructions)) {
+        return NextResponse.json(
+          { error: '0x Solana response missing instructions' },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({
+        source: '0x',
+        chain: 'SOLANA_MAINNET',
+        solana: {
+          instructions: solanaPayload.instructions,
+          amountOut: solanaPayload.amount_out ?? 0,
+          rpcUrl: SOLANA_MAINNET.rpcUrl,
+        },
+        sellTokenAddress: tokenInMint,
+        buyTokenAddress: tokenOutMint,
+      });
+    }
+
+    // --- EVM: existing 0x v1/v2 flow ---
+    const chainConfig = chainConfigs[resolvedChainKey as keyof typeof chainConfigs];
+    if (!chainConfig) {
+      return NextResponse.json({ error: 'Unsupported chain' }, { status: 400 });
+    }
+
+    let tokenConfig = tokenMaps[resolvedChainKey as keyof typeof tokenMaps];
+    tokenConfig = applyTokenEnvOverrides(resolvedChainKey, tokenConfig);
 
     const supportedSell = normalizedSellToken === 'ETH' || tokenConfig[normalizedSellToken];
     const supportedBuy = !!tokenConfig[normalizedBuyToken] || normalizedBuyToken === 'ETH';

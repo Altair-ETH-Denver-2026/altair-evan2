@@ -6,7 +6,8 @@ import { SpinningLogo } from './SpinningLogo';
 import { ShieldCheck, Send, Loader2 } from 'lucide-react';
 import Logo from '../image/logo.png';
 import { usePrivy } from '@privy-io/react-auth';
-import { useSwap } from '../lib/useSwap';
+import { useSwap, resolveSelectedChain } from '../lib/useSwap';
+import { useSolanaSwap } from '../lib/useSolanaSwap';
 import { CHAT_PANEL } from '../../config/ui_config';
 
 interface Message {
@@ -33,6 +34,7 @@ const SAMPLE_PROMPTS = [
 export default function Chat() {
   const { authenticated, getAccessToken } = usePrivy();
   const executeSwap = useSwap();
+  const executeSolanaSwap = useSolanaSwap();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -82,9 +84,6 @@ export default function Chat() {
   };
 
 
-  const SUPPORTED_SELL = ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
-  const SUPPORTED_BUY = ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
-
   const maybeExecuteSwapIntent = async (aiResponse: string): Promise<{ message: string; txHash?: string; chain?: string; sellToken?: string; buyToken?: string; amount?: string } | null> => {
     const intent = extractSwapIntent(aiResponse);
     if (!intent || intent.type !== 'SWAP_INTENT') return null;
@@ -96,13 +95,19 @@ export default function Chat() {
     if (!amount || Number(amount) <= 0 || !sell || !buy) {
       return null;
     }
+
+    const selectedChain = resolveSelectedChain();
+    const SUPPORTED_SELL = selectedChain === 'SOLANA_MAINNET' ? ['SOL', 'USDC'] : ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
+    const SUPPORTED_BUY = selectedChain === 'SOLANA_MAINNET' ? ['SOL', 'USDC'] : ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
     if (!SUPPORTED_SELL.includes(sell) || !SUPPORTED_BUY.includes(buy)) {
       return null;
     }
 
     setIsExecutingSwap(true);
     try {
-      const txHash = await executeSwap(sell, amount, buy);
+      const txHash = selectedChain === 'SOLANA_MAINNET'
+        ? await executeSolanaSwap(sell, amount, buy)
+        : await executeSwap(sell, amount, buy);
       const action = sell === 'ETH' && buy === 'WETH' ? 'wrapped' : 'swapped';
       const msg = `Swap executed: ${action} ${amount} ${sell} for ${buy}.\n${txHash}`;
       const chain = typeof window !== 'undefined' ? localStorage.getItem('selectedChain') ?? undefined : undefined;
