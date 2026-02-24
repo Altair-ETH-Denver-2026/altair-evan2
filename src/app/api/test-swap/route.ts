@@ -100,48 +100,28 @@ export async function POST(req: Request) {
       const amountHuman = Number(amount);
       const amountInRaw = Math.floor(amountHuman * 10 ** decimals).toString();
       const jupiterApiKey = process.env.JUPITER_API_KEY;
-      const quoteHeaders: Record<string, string> = { Accept: 'application/json' };
-      if (jupiterApiKey) quoteHeaders['x-api-key'] = jupiterApiKey;
-      const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${encodeURIComponent(tokenInMint)}&outputMint=${encodeURIComponent(tokenOutMint)}&amount=${amountInRaw}&slippageBps=50&restrictIntermediateTokens=true`;
-      const quoteRes = await fetch(quoteUrl, { headers: quoteHeaders });
-      if (!quoteRes.ok) {
-        const errText = await quoteRes.text();
+      if (!jupiterApiKey) {
         return NextResponse.json(
-          { error: `Jupiter quote failed: ${errText}` },
+          { error: 'JUPITER_API_KEY is required for Solana swaps. Get an Ultra Swap API key at https://portal.jup.ag/api-keys' },
           { status: 500 }
         );
       }
-      const quoteResponse = (await quoteRes.json()) as Record<string, unknown>;
-      if (!quoteResponse?.routePlan) {
-        return NextResponse.json(
-          { error: 'Jupiter returned no route for this pair/amount.' },
-          { status: 500 }
-        );
-      }
-      const swapRes = await fetch('https://api.jup.ag/swap/v1/swap', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(jupiterApiKey ? { 'x-api-key': jupiterApiKey } : {}),
-        },
-        body: JSON.stringify({
-          quoteResponse,
-          userPublicKey: recipient,
-          wrapAndUnwrapSol: true,
-          dynamicComputeUnitLimit: true,
-        }),
+      const orderUrl = `https://api.jup.ag/ultra/v1/order?inputMint=${encodeURIComponent(tokenInMint)}&outputMint=${encodeURIComponent(tokenOutMint)}&amount=${amountInRaw}&taker=${encodeURIComponent(recipient)}`;
+      const orderRes = await fetch(orderUrl, {
+        headers: { Accept: 'application/json', 'x-api-key': jupiterApiKey },
       });
-      if (!swapRes.ok) {
-        const errText = await swapRes.text();
-        return NextResponse.json(
-          { error: `Jupiter swap build failed: ${errText}` },
-          { status: 500 }
-        );
+      if (!orderRes.ok) {
+        const errText = await orderRes.text();
+        const isUnauthorized = orderRes.status === 401;
+        const userMessage = isUnauthorized
+          ? 'Invalid or missing JUPITER_API_KEY. Use an Ultra Swap API key from https://portal.jup.ag/api-keys'
+          : `Jupiter Ultra order failed: ${errText}`;
+        return NextResponse.json({ error: userMessage }, { status: 500 });
       }
-      const swapPayload = (await swapRes.json()) as { swapTransaction?: string };
-      if (!swapPayload?.swapTransaction) {
+      const orderPayload = (await orderRes.json()) as { transaction?: string; requestId?: string; outAmount?: string };
+      if (!orderPayload?.transaction) {
         return NextResponse.json(
-          { error: 'Jupiter response missing swapTransaction.' },
+          { error: 'Jupiter Ultra returned no transaction for this pair/amount.' },
           { status: 500 }
         );
       }
@@ -149,9 +129,9 @@ export async function POST(req: Request) {
         source: 'jupiter',
         chain: 'SOLANA_MAINNET',
         solana: {
-          swapTransaction: swapPayload.swapTransaction,
+          swapTransaction: orderPayload.transaction,
           rpcUrl: SOLANA_MAINNET.rpcUrl,
-          amountOut: typeof quoteResponse.outAmount === 'string' ? quoteResponse.outAmount : undefined,
+          amountOut: orderPayload.outAmount,
         },
         sellTokenAddress: tokenInMint,
         buyTokenAddress: tokenOutMint,
