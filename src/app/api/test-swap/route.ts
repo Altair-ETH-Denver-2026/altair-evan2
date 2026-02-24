@@ -41,6 +41,9 @@ const tokenMaps: Record<keyof typeof chainConfigs, ChainTokens> = {
   ARBITRUM_ONE: ARBITRUM_ONE_TOKENS,
 };
 
+/** 0x Swap API v2 requires an address for native ETH; this is the standard sentinel (see 0x docs / ERC-7528). */
+const NATIVE_ETH_ADDRESS = '0xEeeeeEeeeEeeeEeeeEeeeEeeeEeEeeEeEeEeEeEeeEeEe';
+
 export async function POST(req: Request) {
   try {
     const { chain: requestedChain, buyToken, sellToken, amount, recipient } = (await req
@@ -100,8 +103,6 @@ export async function POST(req: Request) {
 
     const zeroXApiKey = process.env.ZEROX_API_KEY;
     const chainId = chainConfig.chainId;
-    const zeroXSellToken = normalizedSellToken === 'ETH' ? 'ETH' : tokenConfig[normalizedSellToken].address;
-    const zeroXBuyToken = normalizedBuyToken === 'ETH' ? 'ETH' : tokenConfig[normalizedBuyToken].address;
 
     // 0x v2 does not support testnets (chainId 11155111 / 84532). Use v1 chain-specific endpoints for testnets.
     const v1TestnetEndpoints: Partial<Record<ChainKey, string>> = {
@@ -109,6 +110,10 @@ export async function POST(req: Request) {
       BASE_SEPOLIA: 'https://base-sepolia.api.0x.org/swap/v1/quote',
     };
     const v1Endpoint = v1TestnetEndpoints[resolvedChainKey];
+    // v1 accepts "ETH" string for native; v2 requires the sentinel address (0xEee...)
+    const nativeTokenParam = v1Endpoint ? 'ETH' : NATIVE_ETH_ADDRESS;
+    const zeroXSellToken = normalizedSellToken === 'ETH' ? nativeTokenParam : tokenConfig[normalizedSellToken].address;
+    const zeroXBuyToken = normalizedBuyToken === 'ETH' ? nativeTokenParam : tokenConfig[normalizedBuyToken].address;
     let methodParameters: { to: string; calldata: string; value: string };
 
     if (v1Endpoint) {
