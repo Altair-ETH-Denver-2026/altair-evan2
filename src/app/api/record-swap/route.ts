@@ -50,6 +50,8 @@ export async function POST(req: Request) {
       txHash: String(txHash),
     });
 
+    console.log('[0G] Swap recorded', { chain: chainKey, txHash: String(txHash), backend: result.backend });
+
     return NextResponse.json({
       ok: true,
       backend: result.backend,

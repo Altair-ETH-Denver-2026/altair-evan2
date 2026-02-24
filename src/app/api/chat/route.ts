@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import OpenAI from 'openai';
+import { fetchUserBalanceForChain } from '@/lib/fetch-user-balance';
 import {
   compactMemoryForPrompt,
   getSwapHistory,
@@ -9,6 +10,7 @@ import {
   saveUserMemory,
   SWAP_HISTORY_KEY,
 } from '@/lib/zg-storage';
+import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../../../config/blockchain_config';
 
 const openai = new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY 
@@ -98,13 +100,17 @@ const EVM_SWAP_BLOCK = `
 function buildSystemPrompt(
   memoryBlock: string,
   swapHistoryBlock: string,
-  selectedChain?: string | null
+  selectedChain?: string | null,
+  balanceBlock?: string | null
 ): string {
   const chainBlock =
     selectedChain === 'SOLANA_MAINNET' ? SOLANA_SWAP_BLOCK : EVM_SWAP_BLOCK;
+  const balanceSection = balanceBlock
+    ? `\n## User wallet balances (current chain)\nUse this when the user asks for their balance, to "sell all" of a token, or how much they hold. Do not say you cannot see their wallet—you have access to the balances below.\n${balanceBlock}\n`
+    : '';
   return `${BASE_PROMPT}
 ${chainBlock}
-
+${balanceSection}
 ## Context (use as background; prefer the latest user message if anything conflicts)
 ${memoryBlock}
 ${swapHistoryBlock}`;
@@ -160,13 +166,28 @@ export async function POST(req: Request) {
         );
         if (swapHistory.length > 0) {
           swapHistoryBlock = `\nUser swap history (last ${swapHistory.length}):\n${JSON.stringify(swapHistory.map((s) => ({ chain: s.chain, sell: s.sellToken, buy: s.buyToken, amount: s.sellAmount, txHash: s.txHash, at: s.timestamp })))}`;
+          console.log('[0G] Swap history for prompt', { count: swapHistory.length });
         }
-      } catch {
-        // omit swap history on error
+      } catch (swapErr) {
+        console.warn('[0G] Swap history read failed:', swapErr);
       }
     }
 
-    const systemPrompt = buildSystemPrompt(memoryBlock, swapHistoryBlock, selectedChain);
+    const chainForBalance: ChainKey = (selectedChain && selectedChain in CHAINS ? selectedChain : BLOCKCHAIN) as ChainKey;
+    let balanceBlock: string | null = null;
+    if (accessToken) {
+      try {
+        const balanceData = await fetchUserBalanceForChain(accessToken, chainForBalance);
+        if (balanceData && balanceData.address) {
+          const { address: _addr, ...balances } = balanceData;
+          balanceBlock = `Current chain: ${chainForBalance}. Balances: ${JSON.stringify(balances)}`;
+        }
+      } catch (balanceErr) {
+        console.warn('[Chat] Balance fetch for prompt failed:', balanceErr);
+      }
+    }
+
+    const systemPrompt = buildSystemPrompt(memoryBlock, swapHistoryBlock, selectedChain, balanceBlock);
 
     // Actual OpenAI Call (history roles are 'user' | 'assistant' from chat UI)
     const historyMessages = (Array.isArray(history) ? history : [])
