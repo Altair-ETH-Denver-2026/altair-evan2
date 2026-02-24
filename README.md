@@ -79,14 +79,26 @@ Low-level flow submit diagnostics (for debugging `flow.submit` reverts):
 - `GET /api/test-user-memory-namespace`
 - `GET /api/test-zg-inference-storage-e2e` — writes `chat_summary_latest`, reads it back, returns `storedChatContext` for verification
 
-## Swap execution (0x)
+## Swap execution (0x + Jupiter)
 
 When the AI returns a `SWAP_INTENT` JSON (`sell`, `buy`, `amount`), the client executes the swap on-chain:
 
-- **Supported sell:** ETH, WETH, USDC, USDT, DAI. **Supported buy:** ETH, WETH, USDC, USDT, DAI (e.g. sell USDC → buy ETH). Per-chain token addresses and decimals in `config/token_info`; amount is human-readable (server converts to raw).
-- **Chains:** Base Mainnet, Ethereum Mainnet, Arbitrum One (0x v2). Testnets: Base Sepolia, ETH Sepolia (0x v1; limited liquidity). **Solana:** planned; not yet supported (UI shows “Solana (coming soon)”).
-- **Backend:** `POST /api/test-swap` uses the 0x Swap API (v2 for mainnets, v1 for testnets); the client sends the transaction via the user’s Privy wallet.
-- **Env (required for mainnet swaps):** `ZEROX_API_KEY` from [dashboard.0x.org](https://dashboard.0x.org/apps) for EVM. **Solana** uses [Jupiter Swap API](https://dev.jup.ag/docs/swap-api) (no key required; optional `JUPITER_API_KEY` for higher rate limits). Per-chain token overrides: `BASE_MAINNET_USDC_ADDRESS`, `ARBITRUM_ONE_USDT_ADDRESS`, etc. (pattern: `<CHAIN_KEY>_<SYMBOL>_ADDRESS`).
+- **EVM:** Supported sell/buy: ETH, WETH, USDC, USDT, DAI. Per-chain token addresses and decimals in `config/token_info`; amount is human-readable (server converts to raw).
+- **Chains:** Base Mainnet, Ethereum Mainnet, Arbitrum One (0x v2). Testnets: Base Sepolia, ETH Sepolia (0x v1; limited liquidity). **Solana Mainnet:** SOL ↔ USDC via [Jupiter Ultra Swap API](https://station.jup.ag/docs/apis/ultra-swap-api). See Solana RPC section below for optional RPC env vars.
+- **Backend:** `POST /api/test-swap` uses 0x for EVM (v2 mainnets, v1 testnets) and Jupiter Ultra for Solana; the client sends the transaction via the user’s Privy wallet.
+- **Env (EVM):** `ZEROX_API_KEY` from [dashboard.0x.org](https://dashboard.0x.org/apps). **Solana:** `JUPITER_API_KEY` (required; get an Ultra Swap key at [portal.jup.ag/api-keys](https://portal.jup.ag/api-keys)). Per-chain token overrides: `BASE_MAINNET_USDC_ADDRESS`, `ARBITRUM_ONE_USDT_ADDRESS`, etc. (pattern: `<CHAIN_KEY>_<SYMBOL>_ADDRESS`).
+
+### Solana RPC (Privy + @solana/kit)
+
+Privy's embedded wallet needs an RPC config for `solana:mainnet` so `signAndSendTransaction` works. The app uses **@solana/kit** in `src/app/providers.tsx` to build that config:
+
+- `createSolanaRpc(mainnet(url))` — HTTP RPC
+- `createSolanaRpcSubscriptions(mainnet(url))` — WebSocket subscriptions
+
+**Optional env** (defaults to public Solana mainnet; omit unless you use a custom RPC e.g. Helius, QuickNode):
+
+- `NEXT_PUBLIC_SOLANA_RPC_URL` — default `https://api.mainnet-beta.solana.com`
+- `NEXT_PUBLIC_SOLANA_RPC_WS` — default `wss://api.mainnet-beta.solana.com`
 
 ## Swap history (0G)
 

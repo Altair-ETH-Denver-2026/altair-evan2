@@ -2,7 +2,11 @@
 
 import { PrivyProvider } from '@privy-io/react-auth';
 import { toSolanaWalletConnectors } from '@privy-io/react-auth/solana';
+import { createSolanaRpc, createSolanaRpcSubscriptions, mainnet as solanaMainnet } from '@solana/kit';
 import { base, baseSepolia, mainnet, sepolia } from 'viem/chains';
+
+const SOLANA_RPC_HTTP = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+const SOLANA_RPC_WS = process.env.NEXT_PUBLIC_SOLANA_RPC_WS || 'wss://api.mainnet-beta.solana.com';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? process.env.PRIVY_APP_ID;
@@ -28,6 +32,15 @@ export default function Providers({ children }: { children: React.ReactNode }) {
             connectors: toSolanaWalletConnectors(),
           },
         },
+        solana: {
+          rpcs: {
+            'solana:mainnet': {
+              rpc: createSolanaRpc(solanaMainnet(SOLANA_RPC_HTTP)),
+              rpcSubscriptions: createSolanaRpcSubscriptions(solanaMainnet(SOLANA_RPC_WS)),
+            },
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Privy types expect test-cluster RPC; mainnet RPC is valid at runtime
+        } as any,
       }}
     >
       {children}
