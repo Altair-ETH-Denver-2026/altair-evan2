@@ -95,5 +95,5 @@ Executed swaps are stored in 0G as a **separate category** from chat memory:
 - **Storage key:** `swap_history` (same user namespace as `chat_summary_latest`).
 - **Schema:** `{ schemaVersion: 'v1', swaps: [{ chain, sellToken, buyToken, sellAmount, txHash, timestamp }, ...] }` (capped at 100 entries).
 - **Recording:** After a successful swap, the client calls `POST /api/record-swap` with `accessToken`, `chain`, `sellToken`, `buyToken`, `sellAmount`, `txHash`; the server appends to the user’s `swap_history` in 0G (or local fallback).
-- **Read history:** `GET /api/swap-history` returns the current user’s swap history (requires `privy-token` cookie or `?accessToken=...`). Optional `?limit=50` (default 50, max 100).
+- **Read history:** `GET /api/swap-history` returns the current user’s swap history (requires `privy-token` cookie or `?accessToken=...`). Optional `?limit=50` (default 50, max 100). Run `npm run test:swap-history` (or `./scripts/test-swap-history.sh`) with the dev server up to verify status codes and response shape; set `ACCESS_TOKEN` to test authenticated response.
 - **Chat context:** `/api/chat` pre-reads `swap_history` and injects the last 10 swaps into the system prompt as “User swap history” so the AI can reference past swaps.
