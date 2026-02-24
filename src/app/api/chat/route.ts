@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import OpenAI from 'openai';
-import { compactMemoryForPrompt, getUserMemory, parseMemoryValue, saveUserMemory } from '@/lib/zg-storage';
+import {
+  compactMemoryForPrompt,
+  getSwapHistory,
+  getUserMemory,
+  parseMemoryValue,
+  saveUserMemory,
+  SWAP_HISTORY_KEY,
+} from '@/lib/zg-storage';
 
 const openai = new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY 
@@ -95,8 +102,23 @@ export async function POST(req: Request) {
       ? `\nUser Memory Context (from prior chats; may be stale):\n${JSON.stringify(memoryContextForPrompt)}`
       : '\nUser Memory Context: none available yet.';
 
+    let swapHistoryBlock = '\nSwap history: none.';
+    if (accessToken) {
+      try {
+        const swapHistory = await getSwapHistory(
+          { key: SWAP_HISTORY_KEY, accessToken },
+          10
+        );
+        if (swapHistory.length > 0) {
+          swapHistoryBlock = `\nUser swap history (last ${swapHistory.length}):\n${JSON.stringify(swapHistory.map((s) => ({ chain: s.chain, sell: s.sellToken, buy: s.buyToken, amount: s.sellAmount, txHash: s.txHash, at: s.timestamp })))}`;
+        }
+      } catch {
+        // omit swap history on error
+      }
+    }
+
     const systemPrompt = `
-      You are Altair, a DeFi concierge on the Base network.
+      You are Altair, a DeFi concierge (Base, Ethereum, Arbitrum).
       Identify: Sell Token, Buy Token, and Amount.
       If info is missing, ask.
 
@@ -105,18 +127,23 @@ export async function POST(req: Request) {
 
       If you only need to signal execution to the app, return JSON:
       { "type": "SWAP_INTENT", "sell": "ETH", "buy": "USDC", "amount": 0.1 }
-      
-      Use the user memory context as helpful background, but prioritize the latest user message if there is any conflict.
+      Supported sell: ETH, WETH, USDC, USDT, DAI. Supported buy: ETH, WETH, USDC, USDT, DAI (e.g. sell USDC for ETH).
+
+      Use the user memory context and swap history as helpful background; prioritize the latest user message if there is any conflict.
       ${memoryBlock}
+      ${swapHistoryBlock}
     `;
 
-    // Actual OpenAI Call
+    // Actual OpenAI Call (history roles are 'user' | 'assistant' from chat UI)
+    const historyMessages = (Array.isArray(history) ? history : [])
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: typeof m.content === 'string' ? m.content : '' }))
+      .filter((m) => m.content !== undefined);
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
-        ...history,
-        { role: "user", content: message },
+        ...historyMessages,
+        { role: "user", content: message ?? '' },
       ],
     });
 
@@ -130,7 +157,7 @@ export async function POST(req: Request) {
         const write = await saveUserMemory({
           key: 'chat_summary_latest',
           accessToken,
-          value: JSON.stringify(buildUpdatedChatSummary(priorMemory, message, aiResponse)),
+          value: JSON.stringify(buildUpdatedChatSummary(priorMemory, message ?? '', aiResponse)),
         });
         zgHash = write.rootHash ?? null;
         if (write.backend === 'local_file' && write.error) {

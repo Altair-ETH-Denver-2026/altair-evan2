@@ -480,3 +480,85 @@ export function compactMemoryForPrompt(memory: Record<string, unknown>): Record<
       : null,
   };
 }
+
+/** Key used in 0G/local storage for swap history (separate from chat_summary_latest). */
+export const SWAP_HISTORY_KEY = 'swap_history';
+
+export type SwapHistoryRecord = {
+  chain: string;
+  sellToken: string;
+  buyToken: string;
+  sellAmount: string;
+  txHash: string;
+  timestamp: string;
+};
+
+export type SwapHistoryPayload = {
+  schemaVersion: 'v1';
+  swaps: SwapHistoryRecord[];
+};
+
+const MAX_SWAP_HISTORY_ENTRIES = 100;
+
+/** Appends one swap record to the user's swap_history in 0G (or local fallback). */
+export async function appendSwapToHistory(params: {
+  accessToken: string | null;
+  chain: string;
+  sellToken: string;
+  buyToken: string;
+  sellAmount: string;
+  txHash: string;
+}): Promise<ArchiveResult> {
+  const { accessToken, chain, sellToken, buyToken, sellAmount, txHash } = params;
+  const record: SwapHistoryRecord = {
+    chain,
+    sellToken,
+    buyToken,
+    sellAmount,
+    txHash,
+    timestamp: new Date().toISOString(),
+  };
+
+  let existing: SwapHistoryPayload = { schemaVersion: 'v1', swaps: [] };
+  if (accessToken) {
+    try {
+      const read = await getUserMemory({ key: SWAP_HISTORY_KEY, accessToken });
+      if (read.value) {
+        try {
+          const parsed = JSON.parse(read.value) as SwapHistoryPayload;
+          if (parsed?.swaps && Array.isArray(parsed.swaps)) {
+            existing = { schemaVersion: 'v1', swaps: parsed.swaps };
+          }
+        } catch {
+          // keep default existing
+        }
+      }
+    } catch {
+      // proceed with empty history
+    }
+  }
+
+  const updated: SwapHistoryPayload = {
+    schemaVersion: 'v1',
+    swaps: [...existing.swaps, record].slice(-MAX_SWAP_HISTORY_ENTRIES),
+  };
+
+  return saveUserMemory({
+    key: SWAP_HISTORY_KEY,
+    value: JSON.stringify(updated),
+    accessToken: accessToken ?? undefined,
+  });
+}
+
+/** Returns the user's swap history for prompt context (e.g. last N entries). */
+export async function getSwapHistory(params: GetMemoryParams, lastN = 10): Promise<SwapHistoryRecord[]> {
+  const read = await getUserMemory(params);
+  if (!read.value) return [];
+  try {
+    const parsed = JSON.parse(read.value) as SwapHistoryPayload;
+    if (!parsed?.swaps || !Array.isArray(parsed.swaps)) return [];
+    return parsed.swaps.slice(-lastN);
+  } catch {
+    return [];
+  }
+}

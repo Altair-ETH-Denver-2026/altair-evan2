@@ -1,10 +1,45 @@
 import { NextResponse } from 'next/server';
 import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../../../config/blockchain_config';
-import { BASE_MAINNET, BASE_SEPOLIA, ETH_MAINNET, ETH_SEPOLIA, resolveRpcUrls } from '../../../../config/chain_info';
-import { USDC as BASE_USDC, WETH as BASE_WETH } from '../../../../config/token_info/base_tokens';
-import { USDC as BASE_SEPOLIA_USDC, WETH as BASE_SEPOLIA_WETH } from '../../../../config/token_info/base_testnet_sepolia_tokens';
-import { USDC as ETH_USDC, WETH as ETH_WETH } from '../../../../config/token_info/eth_tokens';
-import { USDC as ETH_SEPOLIA_USDC, WETH as ETH_SEPOLIA_WETH } from '../../../../config/token_info/eth_sepolia_testnet_tokens';
+import {
+  ARBITRUM_ONE,
+  BASE_MAINNET,
+  BASE_SEPOLIA,
+  ETH_MAINNET,
+  ETH_SEPOLIA,
+  resolveRpcUrls,
+} from '../../../../config/chain_info';
+import type { ChainTokens } from '../../../../config/token_info/types';
+import { BASE_MAINNET_TOKENS } from '../../../../config/token_info/base_tokens';
+import { BASE_SEPOLIA_TOKENS } from '../../../../config/token_info/base_testnet_sepolia_tokens';
+import { ETH_MAINNET_TOKENS } from '../../../../config/token_info/eth_tokens';
+import { ETH_SEPOLIA_TOKENS } from '../../../../config/token_info/eth_sepolia_testnet_tokens';
+import { ARBITRUM_ONE_TOKENS } from '../../../../config/token_info/arbitrum_tokens';
+
+function applyTokenEnvOverrides(chainKey: ChainKey, tokens: ChainTokens): ChainTokens {
+  const out = { ...tokens };
+  for (const symbol of Object.keys(out)) {
+    const envKey = `${chainKey}_${symbol}_ADDRESS`;
+    const addr = process.env[envKey];
+    if (addr) out[symbol] = { ...out[symbol], address: addr };
+  }
+  return out;
+}
+
+const chainConfigs = {
+  BASE_SEPOLIA,
+  ETH_SEPOLIA,
+  ETH_MAINNET,
+  BASE_MAINNET,
+  ARBITRUM_ONE,
+} as const;
+
+const tokenMaps: Record<keyof typeof chainConfigs, ChainTokens> = {
+  BASE_SEPOLIA: BASE_SEPOLIA_TOKENS,
+  ETH_SEPOLIA: ETH_SEPOLIA_TOKENS,
+  ETH_MAINNET: ETH_MAINNET_TOKENS,
+  BASE_MAINNET: BASE_MAINNET_TOKENS,
+  ARBITRUM_ONE: ARBITRUM_ONE_TOKENS,
+};
 
 export async function POST(req: Request) {
   try {
@@ -27,34 +62,13 @@ export async function POST(req: Request) {
     const resolvedChainKey: ChainKey =
       requestedChain && requestedChain in CHAINS ? requestedChain : (BLOCKCHAIN as ChainKey);
 
-    const chainConfigs = {
-      BASE_SEPOLIA,
-      ETH_SEPOLIA,
-      ETH_MAINNET,
-      BASE_MAINNET,
-    } as const;
-
-    const chainConfig = chainConfigs[resolvedChainKey];
-    const tokenConfigs = {
-      BASE_SEPOLIA: { USDC: BASE_SEPOLIA_USDC, WETH: BASE_SEPOLIA_WETH },
-      ETH_SEPOLIA: { USDC: ETH_SEPOLIA_USDC, WETH: ETH_SEPOLIA_WETH },
-      ETH_MAINNET: { USDC: ETH_USDC, WETH: ETH_WETH },
-      BASE_MAINNET: { USDC: BASE_USDC, WETH: BASE_WETH },
-    } as const;
-
-    let tokenConfig = tokenConfigs[resolvedChainKey];
-    // Optional .env overrides per chain (e.g. BASE_SEPOLIA_WETH_ADDRESS, BASE_SEPOLIA_USDC_ADDRESS)
-    const envWeth = process.env[`${resolvedChainKey}_WETH_ADDRESS`];
-    const envUsdc = process.env[`${resolvedChainKey}_USDC_ADDRESS`];
-    if (envWeth || envUsdc) {
-      tokenConfig = {
-        WETH: { ...tokenConfig.WETH, ...(envWeth ? { address: envWeth } : {}) },
-        USDC: { ...tokenConfig.USDC, ...(envUsdc ? { address: envUsdc } : {}) },
-      } as typeof tokenConfig;
-    }
+    const chainConfig = chainConfigs[resolvedChainKey as keyof typeof chainConfigs];
     if (!chainConfig) {
       return NextResponse.json({ error: 'Unsupported chain' }, { status: 400 });
     }
+
+    let tokenConfig = tokenMaps[resolvedChainKey as keyof typeof tokenMaps];
+    tokenConfig = applyTokenEnvOverrides(resolvedChainKey, tokenConfig);
 
     if (!amount || !recipient) {
       return NextResponse.json({ error: 'Missing amount or recipient' }, { status: 400 });
@@ -63,19 +77,31 @@ export async function POST(req: Request) {
     const normalizedBuyToken = buyToken?.toUpperCase();
     const normalizedSellToken = sellToken?.toUpperCase();
     if (!normalizedBuyToken || !normalizedSellToken) {
-      return NextResponse.json({ error: 'Missing buy token' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing buy or sell token' }, { status: 400 });
     }
 
-    const supportedBuy = normalizedBuyToken === 'WETH' || normalizedBuyToken === 'USDC';
-    const supportedSell = normalizedSellToken === 'ETH' || normalizedSellToken === 'WETH';
-    if (!supportedBuy || !supportedSell) {
-      return NextResponse.json({ error: 'Unsupported token pair' }, { status: 400 });
+    const supportedSell = normalizedSellToken === 'ETH' || tokenConfig[normalizedSellToken];
+    const supportedBuy = !!tokenConfig[normalizedBuyToken] || normalizedBuyToken === 'ETH';
+    if (!supportedSell || !supportedBuy) {
+      return NextResponse.json(
+        {
+          error: `Unsupported token pair. Sell must be ETH or one of: ${Object.keys(tokenConfig).join(', ')}. Buy must be ETH or one of: ${Object.keys(tokenConfig).join(', ')}.`,
+        },
+        { status: 400 }
+      );
     }
+
+    // Amount: treat as human-readable; convert to raw using sell token decimals (0x expects sellAmount in smallest units)
+    const sellTokenInfo = normalizedSellToken === 'ETH' ? null : tokenConfig[normalizedSellToken];
+    const decimals = sellTokenInfo?.decimals ?? 18;
+    const amountHuman = Number(amount);
+    const rawAmount = BigInt(Math.floor(amountHuman * 10 ** decimals));
+    const sellAmountRaw = rawAmount.toString();
 
     const zeroXApiKey = process.env.ZEROX_API_KEY;
     const chainId = chainConfig.chainId;
-    const zeroXSellToken = normalizedSellToken === 'ETH' ? 'ETH' : tokenConfig.WETH.address;
-    const zeroXBuyToken = normalizedBuyToken === 'WETH' ? tokenConfig.WETH.address : tokenConfig.USDC.address;
+    const zeroXSellToken = normalizedSellToken === 'ETH' ? 'ETH' : tokenConfig[normalizedSellToken].address;
+    const zeroXBuyToken = normalizedBuyToken === 'ETH' ? 'ETH' : tokenConfig[normalizedBuyToken].address;
 
     // 0x v2 does not support testnets (chainId 11155111 / 84532). Use v1 chain-specific endpoints for testnets.
     const v1TestnetEndpoints: Partial<Record<ChainKey, string>> = {
@@ -89,7 +115,7 @@ export async function POST(req: Request) {
       const v1Url = new URL(v1Endpoint);
       v1Url.searchParams.set('sellToken', zeroXSellToken);
       v1Url.searchParams.set('buyToken', zeroXBuyToken);
-      v1Url.searchParams.set('sellAmount', amount);
+      v1Url.searchParams.set('sellAmount', sellAmountRaw);
       v1Url.searchParams.set('takerAddress', recipient);
       v1Url.searchParams.set('slippagePercentage', '0.005');
       const headers: Record<string, string> = { Accept: 'application/json' };
@@ -114,7 +140,7 @@ export async function POST(req: Request) {
       }
       methodParameters = { to: v1Payload.to, calldata: v1Payload.data, value: v1Payload.value };
     } else {
-      // 0x Swap API v2 for mainnets (Base, Ethereum, etc.)
+      // 0x Swap API v2 for mainnets (Base, Ethereum, Arbitrum, etc.)
       if (!zeroXApiKey) {
         return NextResponse.json(
           { error: 'ZEROX_API_KEY is required for 0x Swap API v2 (mainnet). Set it in .env and restart the server.' },
@@ -125,7 +151,7 @@ export async function POST(req: Request) {
       v2Url.searchParams.set('chainId', String(chainId));
       v2Url.searchParams.set('sellToken', zeroXSellToken);
       v2Url.searchParams.set('buyToken', zeroXBuyToken);
-      v2Url.searchParams.set('sellAmount', amount);
+      v2Url.searchParams.set('sellAmount', sellAmountRaw);
       v2Url.searchParams.set('taker', recipient);
       v2Url.searchParams.set('slippageBps', '50');
 
@@ -173,6 +199,7 @@ export async function POST(req: Request) {
       methodParameters,
       source: '0x',
       chainRpcCandidates: resolveRpcUrls(chainConfig.rpcUrls),
+      sellTokenAddress: normalizedSellToken === 'ETH' ? undefined : tokenConfig[normalizedSellToken].address,
     });
   } catch (error) {
     console.error('Test swap error:', error);

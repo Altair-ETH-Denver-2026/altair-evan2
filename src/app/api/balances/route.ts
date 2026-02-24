@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import { createPublicClient, http, formatEther, formatUnits } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../../../config/blockchain_config';
-import { BASE_MAINNET, BASE_SEPOLIA, ETH_MAINNET, ETH_SEPOLIA, resolveRpcUrls } from '../../../../config/chain_info';
+import { ARBITRUM_ONE, BASE_MAINNET, BASE_SEPOLIA, ETH_MAINNET, ETH_SEPOLIA, resolveRpcUrls } from '../../../../config/chain_info';
 import { USDC as BASE_USDC, WETH as BASE_WETH } from '../../../../config/token_info/base_tokens';
 import { USDC as BASE_SEPOLIA_USDC, WETH as BASE_SEPOLIA_WETH } from '../../../../config/token_info/base_testnet_sepolia_tokens';
 import { USDC as ETH_USDC, WETH as ETH_WETH } from '../../../../config/token_info/eth_tokens';
 import { USDC as ETH_SEPOLIA_USDC, WETH as ETH_SEPOLIA_WETH } from '../../../../config/token_info/eth_sepolia_testnet_tokens';
+import { USDC as ARBITRUM_USDC, WETH as ARBITRUM_WETH } from '../../../../config/token_info/arbitrum_tokens';
 import { getPrivyEvmWalletAddress } from '@/lib/privy';
 import { cookies } from 'next/headers';
 
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
       ETH_SEPOLIA,
       ETH_MAINNET,
       BASE_MAINNET,
+      ARBITRUM_ONE,
     } as const;
 
     const resolvedChainKey: ChainKey =
@@ -67,6 +69,7 @@ export async function POST(req: Request) {
       ETH_SEPOLIA: { USDC: ETH_SEPOLIA_USDC, WETH: ETH_SEPOLIA_WETH },
       ETH_MAINNET: { USDC: ETH_USDC, WETH: ETH_WETH },
       BASE_MAINNET: { USDC: BASE_USDC, WETH: BASE_WETH },
+      ARBITRUM_ONE: { USDC: ARBITRUM_USDC, WETH: ARBITRUM_WETH },
     } as const;
 
     const tokenConfig = tokenConfigs[resolvedChainKey];

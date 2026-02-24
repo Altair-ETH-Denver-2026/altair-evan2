@@ -83,8 +83,16 @@ Low-level flow submit diagnostics (for debugging `flow.submit` reverts):
 
 When the AI returns a `SWAP_INTENT` JSON (`sell`, `buy`, `amount`), the client executes the swap on-chain:
 
-- **Supported pairs:** ETH→WETH, ETH→USDC, WETH→USDC (must match `/api/test-swap`).
-- **Backend:** `POST /api/test-swap` uses the 0x Swap API for quotes; the client then sends the transaction via the user’s Privy wallet.
-- **0x and testnets:** 0x Swap API supports **Base mainnet**, not Base Sepolia testnet. For swaps, use the network selector → **Base Mainnet** (and have ETH there). Base Sepolia will return “no route” from 0x.
-- **Env (required for swaps):** `ZEROX_API_KEY` — 0x Swap API v2 requires an API key ([dashboard.0x.org](https://dashboard.0x.org/apps)). Set in `.env` and restart the dev server. Per-chain token overrides: `BASE_SEPOLIA_WETH_ADDRESS`, `BASE_SEPOLIA_USDC_ADDRESS` (and same pattern for other chain keys) if you need to override the built-in token addresses.
-- **Chain:** Determined by app config and user’s selected chain; wallet must be on the correct network.
+- **Supported sell:** ETH, WETH, USDC, USDT, DAI. **Supported buy:** ETH, WETH, USDC, USDT, DAI (e.g. sell USDC → buy ETH). Per-chain token addresses and decimals in `config/token_info`; amount is human-readable (server converts to raw).
+- **Chains:** Base Mainnet, Ethereum Mainnet, Arbitrum One (0x v2). Testnets: Base Sepolia, ETH Sepolia (0x v1; limited liquidity). **Solana:** planned; not yet supported (UI shows “Solana (coming soon)”).
+- **Backend:** `POST /api/test-swap` uses the 0x Swap API (v2 for mainnets, v1 for testnets); the client sends the transaction via the user’s Privy wallet.
+- **Env (required for mainnet swaps):** `ZEROX_API_KEY` — 0x v2 requires an API key ([dashboard.0x.org](https://dashboard.0x.org/apps)). Per-chain token overrides: `BASE_MAINNET_USDC_ADDRESS`, `ARBITRUM_ONE_USDT_ADDRESS`, etc. (pattern: `<CHAIN_KEY>_<SYMBOL>_ADDRESS`).
+
+## Swap history (0G)
+
+Executed swaps are stored in 0G as a **separate category** from chat memory:
+
+- **Storage key:** `swap_history` (same user namespace as `chat_summary_latest`).
+- **Schema:** `{ schemaVersion: 'v1', swaps: [{ chain, sellToken, buyToken, sellAmount, txHash, timestamp }, ...] }` (capped at 100 entries).
+- **Recording:** After a successful swap, the client calls `POST /api/record-swap` with `accessToken`, `chain`, `sellToken`, `buyToken`, `sellAmount`, `txHash`; the server appends to the user’s `swap_history` in 0G (or local fallback).
+- **Chat context:** `/api/chat` pre-reads `swap_history` and injects the last 10 swaps into the system prompt as “User swap history” so the AI can reference past swaps.

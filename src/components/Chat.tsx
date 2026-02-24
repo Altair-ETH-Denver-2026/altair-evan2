@@ -74,7 +74,10 @@ export default function Chat() {
   };
 
 
-  const maybeExecuteSwapIntent = async (aiResponse: string) => {
+  const SUPPORTED_SELL = ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
+  const SUPPORTED_BUY = ['ETH', 'WETH', 'USDC', 'USDT', 'DAI'];
+
+  const maybeExecuteSwapIntent = async (aiResponse: string): Promise<{ message: string; txHash?: string; chain?: string; sellToken?: string; buyToken?: string; amount?: string } | null> => {
     const intent = extractSwapIntent(aiResponse);
     if (!intent || intent.type !== 'SWAP_INTENT') return null;
 
@@ -82,29 +85,20 @@ export default function Chat() {
     const buy = intent.buy?.toUpperCase();
     const amount = typeof intent.amount === 'number' ? intent.amount.toString() : intent.amount;
 
-    if (!amount || Number(amount) <= 0) {
+    if (!amount || Number(amount) <= 0 || !sell || !buy) {
+      return null;
+    }
+    if (!SUPPORTED_SELL.includes(sell) || !SUPPORTED_BUY.includes(buy)) {
       return null;
     }
 
     setIsExecutingSwap(true);
     try {
-      // Supported pairs (must match /api/test-swap: ETH or WETH → WETH or USDC)
-      if (sell === 'ETH' && buy === 'WETH') {
-        const txHash = await executeSwap(sell, amount, buy);
-        return `Swap executed: wrapped ${amount} ETH into WETH.\n${txHash}`;
-      }
-
-      if (sell === 'ETH' && buy === 'USDC') {
-        const txHash = await executeSwap(sell, amount, buy);
-        return `Swap executed: swapped ${amount} ETH for USDC.\n${txHash}`;
-      }
-
-      if (sell === 'WETH' && buy === 'USDC') {
-        const txHash = await executeSwap(sell, amount, buy);
-        return `Swap executed: swapped ${amount} WETH for USDC.\n${txHash}`;
-      }
-
-      return null;
+      const txHash = await executeSwap(sell, amount, buy);
+      const action = sell === 'ETH' && buy === 'WETH' ? 'wrapped' : 'swapped';
+      const msg = `Swap executed: ${action} ${amount} ${sell} for ${buy}.\n${txHash}`;
+      const chain = typeof window !== 'undefined' ? localStorage.getItem('selectedChain') ?? undefined : undefined;
+      return { message: msg, txHash, chain, sellToken: sell, buyToken: buy, amount };
     } catch (err) {
       console.error('[Swap execution failed]', err);
       const rawMsg = err instanceof Error ? err.message : 'Swap failed';
@@ -123,7 +117,7 @@ export default function Chat() {
         msg =
           'A previous transaction may still be pending. Wait a minute and try again, or use Base Sepolia testnet (network selector → Base Testnet) to test with faucet ETH.';
       }
-      return `Swap could not be executed: ${msg}`;
+      return { message: `Swap could not be executed: ${msg}` };
     } finally {
       setIsExecutingSwap(false);
     }
@@ -163,15 +157,34 @@ export default function Chat() {
       });
 
       const data = await response.json();
-      
-      const executionNote = await maybeExecuteSwapIntent(data.content);
-      if (executionNote) {
+
+      const executionResult = await maybeExecuteSwapIntent(data.content);
+      if (executionResult) {
         console.log('[Swap Intent]', data.content);
+        if (executionResult.txHash && executionResult.chain && executionResult.sellToken && executionResult.buyToken && executionResult.amount) {
+          try {
+            await fetch('/api/record-swap', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({
+                accessToken,
+                chain: executionResult.chain,
+                sellToken: executionResult.sellToken,
+                buyToken: executionResult.buyToken,
+                sellAmount: executionResult.amount,
+                txHash: executionResult.txHash,
+              }),
+            });
+          } catch (recordErr) {
+            console.warn('Failed to record swap to 0G:', recordErr);
+          }
+        }
       }
 
       setMessages((prev) => {
-        if (executionNote) {
-          return [...prev, { role: 'assistant', content: executionNote }];
+        if (executionResult) {
+          return [...prev, { role: 'assistant', content: executionResult.message }];
         }
 
         return [
