@@ -77,7 +77,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing buy or sell token' }, { status: 400 });
     }
 
-    // --- Solana: 0x swap-instructions ---
+    // --- Solana: Jupiter Swap API (0x Solana no longer available) ---
     if (isSolanaChain(resolvedChainKey)) {
       const tokenConfig = SOLANA_MAINNET_TOKENS;
       const supportedSell = normalizedSellToken === 'SOL' || tokenConfig[normalizedSellToken];
@@ -98,49 +98,60 @@ export async function POST(req: Request) {
       const sellTokenInfo = tokenConfig[normalizedSellToken] ?? tokenConfig.SOL;
       const decimals = sellTokenInfo?.decimals ?? 9;
       const amountHuman = Number(amount);
-      const amountInRaw = Math.floor(amountHuman * 10 ** decimals);
-      const zeroXApiKey = process.env.ZEROX_API_KEY;
-      if (!zeroXApiKey) {
+      const amountInRaw = Math.floor(amountHuman * 10 ** decimals).toString();
+      const jupiterApiKey = process.env.JUPITER_API_KEY;
+      const quoteHeaders: Record<string, string> = { Accept: 'application/json' };
+      if (jupiterApiKey) quoteHeaders['x-api-key'] = jupiterApiKey;
+      const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${encodeURIComponent(tokenInMint)}&outputMint=${encodeURIComponent(tokenOutMint)}&amount=${amountInRaw}&slippageBps=50&restrictIntermediateTokens=true`;
+      const quoteRes = await fetch(quoteUrl, { headers: quoteHeaders });
+      if (!quoteRes.ok) {
+        const errText = await quoteRes.text();
         return NextResponse.json(
-          { error: 'ZEROX_API_KEY is required for 0x Solana swap. Set it in .env.' },
+          { error: `Jupiter quote failed: ${errText}` },
           { status: 500 }
         );
       }
-      const solanaRes = await fetch('https://api.0x.org/solana/swap-instructions', {
+      const quoteResponse = (await quoteRes.json()) as Record<string, unknown>;
+      if (!quoteResponse?.routePlan) {
+        return NextResponse.json(
+          { error: 'Jupiter returned no route for this pair/amount.' },
+          { status: 500 }
+        );
+      }
+      const swapRes = await fetch('https://api.jup.ag/swap/v1/swap', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          '0x-api-key': zeroXApiKey,
+          ...(jupiterApiKey ? { 'x-api-key': jupiterApiKey } : {}),
         },
         body: JSON.stringify({
-          token_in: tokenInMint,
-          token_out: tokenOutMint,
-          amount_in: amountInRaw,
-          slippage_bps: 50,
-          taker: recipient,
+          quoteResponse,
+          userPublicKey: recipient,
+          wrapAndUnwrapSol: true,
+          dynamicComputeUnitLimit: true,
         }),
       });
-      if (!solanaRes.ok) {
-        const errText = await solanaRes.text();
+      if (!swapRes.ok) {
+        const errText = await swapRes.text();
         return NextResponse.json(
-          { error: `0x Solana quote failed: ${errText}` },
+          { error: `Jupiter swap build failed: ${errText}` },
           { status: 500 }
         );
       }
-      const solanaPayload = (await solanaRes.json()) as { instructions?: unknown[]; amount_out?: number };
-      if (!solanaPayload?.instructions || !Array.isArray(solanaPayload.instructions)) {
+      const swapPayload = (await swapRes.json()) as { swapTransaction?: string };
+      if (!swapPayload?.swapTransaction) {
         return NextResponse.json(
-          { error: '0x Solana response missing instructions' },
+          { error: 'Jupiter response missing swapTransaction.' },
           { status: 500 }
         );
       }
       return NextResponse.json({
-        source: '0x',
+        source: 'jupiter',
         chain: 'SOLANA_MAINNET',
         solana: {
-          instructions: solanaPayload.instructions,
-          amountOut: solanaPayload.amount_out ?? 0,
+          swapTransaction: swapPayload.swapTransaction,
           rpcUrl: SOLANA_MAINNET.rpcUrl,
+          amountOut: typeof quoteResponse.outAmount === 'string' ? quoteResponse.outAmount : undefined,
         },
         sellTokenAddress: tokenInMint,
         buyTokenAddress: tokenOutMint,

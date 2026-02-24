@@ -86,7 +86,7 @@ When the AI returns a `SWAP_INTENT` JSON (`sell`, `buy`, `amount`), the client e
 - **Supported sell:** ETH, WETH, USDC, USDT, DAI. **Supported buy:** ETH, WETH, USDC, USDT, DAI (e.g. sell USDC → buy ETH). Per-chain token addresses and decimals in `config/token_info`; amount is human-readable (server converts to raw).
 - **Chains:** Base Mainnet, Ethereum Mainnet, Arbitrum One (0x v2). Testnets: Base Sepolia, ETH Sepolia (0x v1; limited liquidity). **Solana:** planned; not yet supported (UI shows “Solana (coming soon)”).
 - **Backend:** `POST /api/test-swap` uses the 0x Swap API (v2 for mainnets, v1 for testnets); the client sends the transaction via the user’s Privy wallet.
-- **Env (required for mainnet swaps):** `ZEROX_API_KEY` — 0x v2 requires an API key ([dashboard.0x.org](https://dashboard.0x.org/apps)). Per-chain token overrides: `BASE_MAINNET_USDC_ADDRESS`, `ARBITRUM_ONE_USDT_ADDRESS`, etc. (pattern: `<CHAIN_KEY>_<SYMBOL>_ADDRESS`).
+- **Env (required for mainnet swaps):** `ZEROX_API_KEY` from [dashboard.0x.org](https://dashboard.0x.org/apps) for EVM. **Solana** uses [Jupiter Swap API](https://dev.jup.ag/docs/swap-api) (no key required; optional `JUPITER_API_KEY` for higher rate limits). Per-chain token overrides: `BASE_MAINNET_USDC_ADDRESS`, `ARBITRUM_ONE_USDT_ADDRESS`, etc. (pattern: `<CHAIN_KEY>_<SYMBOL>_ADDRESS`).
 
 ## Swap history (0G)
 
