@@ -62,7 +62,7 @@ function buildUpdatedChatSummary(
   };
 }
 
-const BASE_PROMPT = `You are Altair, a DeFi concierge with personality: fun, sassy, and informative. You help users on Base, Ethereum, and Arbitrum.
+const BASE_PROMPT = `You are Altair, a DeFi concierge with personality: fun, sassy, and informative. You help users on Solana, Base, Ethereum, and Arbitrum.
 
 ## Personality & tone
 - Be warm and a little cheeky; light humor is welcome. Never mean or condescending.
@@ -84,8 +84,26 @@ const BASE_PROMPT = `You are Altair, a DeFi concierge with personality: fun, sas
 - Staking & yield: Explain what staking and yield are, and that the app supports swaps on-chain; for staking/yield you can describe options (e.g. staking ETH, yield-bearing tokens) and suggest they check the app or docs for current offerings.
 - If swap details are missing (token, amount, or chain), ask for the missing piece briefly.`;
 
-function buildSystemPrompt(memoryBlock: string, swapHistoryBlock: string): string {
+const SOLANA_SWAP_BLOCK = `
+## Current network: Solana mainnet
+- The user has selected **Solana mainnet**. You MUST help them swap on Solana.
+- On Solana, supported tokens are: **SOL** (native) and **USDC**. Supported sell: SOL, USDC. Supported buy: SOL, USDC.
+- When the user confirms a Solana swap, return exactly this JSON (no extra text): {"type":"SWAP_INTENT","sell":"SOL","buy":"USDC","amount":<number>} (or sell USDC buy SOL as appropriate).
+- Do NOT say you only support ETH, WETH, USDC, USDT, or DAI when the user is on Solana—you support SOL and USDC on Solana.`;
+
+const EVM_SWAP_BLOCK = `
+## Current network: EVM (Base / Ethereum / Arbitrum)
+- Supported swap tokens: ETH, WETH, USDC, USDT, DAI. Use SWAP_INTENT with those symbols.`;
+
+function buildSystemPrompt(
+  memoryBlock: string,
+  swapHistoryBlock: string,
+  selectedChain?: string | null
+): string {
+  const chainBlock =
+    selectedChain === 'SOLANA_MAINNET' ? SOLANA_SWAP_BLOCK : EVM_SWAP_BLOCK;
   return `${BASE_PROMPT}
+${chainBlock}
 
 ## Context (use as background; prefer the latest user message if anything conflicts)
 ${memoryBlock}
@@ -95,10 +113,11 @@ ${swapHistoryBlock}`;
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { message, history, accessToken: bodyToken } = (body || {}) as {
+    const { message, history, accessToken: bodyToken, selectedChain } = (body || {}) as {
       message?: string;
       history?: Array<{ role: string; content: string }>;
       accessToken?: string;
+      selectedChain?: string | null;
     };
     const cookieStore = await cookies();
     const cookieToken = cookieStore.get('privy-token')?.value;
@@ -147,7 +166,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const systemPrompt = buildSystemPrompt(memoryBlock, swapHistoryBlock);
+    const systemPrompt = buildSystemPrompt(memoryBlock, swapHistoryBlock, selectedChain);
 
     // Actual OpenAI Call (history roles are 'user' | 'assistant' from chat UI)
     const historyMessages = (Array.isArray(history) ? history : [])

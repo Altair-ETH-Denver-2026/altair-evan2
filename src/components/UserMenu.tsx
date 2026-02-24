@@ -9,6 +9,16 @@ import { useEffect as useClientEffect, useState as useClientState } from 'react'
 import { BLOCKCHAIN, CHAINS, isSolanaChain, type ChainKey } from '../../config/blockchain_config';
 import { BALANCE_DECIMALS, MENU_ICONS, WALLET_DISPLAY, X_SIZE } from '../../config/ui_config';
 
+/** Chains shown in the wallet dropdown with their display labels. */
+const WALLET_DROPDOWN_CHAINS: { key: ChainKey; label: string }[] = [
+  { key: 'SOLANA_MAINNET', label: 'Solana' },
+  { key: 'BASE_MAINNET', label: 'Base Mainnet' },
+  { key: 'ETH_MAINNET', label: 'Ethereum Mainnet' },
+  { key: 'ARBITRUM_ONE', label: 'Arbitrum Mainnet' },
+];
+
+type ChainBalance = { address: string; eth: string; usdc: string };
+
 export default function UserMenu() {
   const { logout, authenticated } = usePrivy();
   const cachedEvmKey = 'cached:evmAddress';
@@ -21,6 +31,7 @@ export default function UserMenu() {
   const [ethBalance, setEthBalance] = useClientState<string>('0');
   const [usdcBalance, setUsdcBalance] = useClientState<string>('0');
   const [evmAddress, setEvmAddress] = useClientState<string>('');
+  const [chainBalances, setChainBalances] = useClientState<Partial<Record<ChainKey, ChainBalance>>>({});
   const [isNetworkOpen, setIsNetworkOpen] = useState(false);
   const [selectedChain, setSelectedChain] = useState<ChainKey>(BLOCKCHAIN);
   const executeSwap = useSwap(selectedChain);
@@ -107,7 +118,47 @@ export default function UserMenu() {
     return () => controller.abort();
   }, [authenticated, selectedChain, setEthBalance, setUsdcBalance, setEvmAddress]);
 
+  useClientEffect(() => {
+    const controller = new AbortController();
+    const run = async () => {
+      if (!authenticated) {
+        setChainBalances({});
+        return;
+      }
+      const token = typeof window !== 'undefined' ? localStorage.getItem('privy:token') : null;
+      if (!token) return;
+      try {
+        const results = await Promise.all(
+          WALLET_DROPDOWN_CHAINS.map(async ({ key }) => {
+            const res = await fetch('/api/balances', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ accessToken: token, chain: key }),
+              signal: controller.signal,
+            });
+            const data = await res.json().catch(() => ({}));
+            return { key, data: data?.address != null ? { address: data.address, eth: data.eth ?? '0', usdc: data.usdc ?? '0' } as ChainBalance : null };
+          })
+        );
+        setChainBalances((prev) => {
+          const next = { ...prev };
+          results.forEach(({ key, data }) => { if (data) next[key] = data; });
+          return next;
+        });
+      } catch {
+        setChainBalances({});
+      }
+    };
+    run();
+    return () => controller.abort();
+  }, [authenticated, setChainBalances]);
+
   if (!authenticated) return null;
+
+  const truncateAddress = (addr: string) => (addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '—');
+  const hasNonZero = (n: string) => Number(n) > 0;
+  const fmtBal = (n: string) => (Number.isNaN(Number(n)) ? n : Number(n).toFixed(BALANCE_DECIMALS));
 
   const showSwapMessage = (message: { type: 'success' | 'error'; text: string }) => {
     setSwapMessage(message);
@@ -316,46 +367,48 @@ export default function UserMenu() {
           />
         </button>
             {isWalletDropDown && isWalletOpen && (
-          <div className="absolute right-0 mt-3 w-48 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] overflow-hidden flex flex-col">
-            <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300 break-all">
-              <button
-                type="button"
-                onClick={() => {
-                  if (evmAddress) navigator.clipboard?.writeText(evmAddress).catch(() => {});
-                }}
-                className="text-left cursor-pointer"
-                title={evmAddress || 'Unknown'}
-              >
-                <Copy className="w-4 h-4" />
-              </button>
-              <span className="text-gray-100 px-3 text-right flex-1 text-sm" title={evmAddress || 'Unknown'}>
-                {evmAddress ? `${evmAddress.slice(0, 6)}...${evmAddress.slice(-4)}` : '—'}
-              </span>
-            </div>
-            <div className="h-[1px] bg-gray-700 w-full" />
-            <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300">
-              <span className="flex-1">ETH</span>
-              <span
-                className="text-gray-100 px-3 text-center whitespace-nowrap hover:whitespace-normal"
-                title={ethBalance}
-              >
-                {Number.isNaN(Number(ethBalance))
-                  ? ethBalance
-                  : Number(ethBalance).toFixed(BALANCE_DECIMALS)}
-              </span>
-            </div>
-            <div className="h-[1px] bg-gray-700 w-full" />
-            <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300">
-              <span className="flex-1">USDC</span>
-              <span
-                className="text-gray-100 px-3 text-center whitespace-nowrap hover:whitespace-normal"
-                title={usdcBalance}
-              >
-                {Number.isNaN(Number(usdcBalance))
-                  ? usdcBalance
-                  : Number(usdcBalance).toFixed(BALANCE_DECIMALS)}
-              </span>
-            </div>
+          <div className="absolute right-0 mt-3 w-72 max-h-[70vh] overflow-y-auto rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[100] flex flex-col">
+            {WALLET_DROPDOWN_CHAINS.map(({ key, label }) => {
+              const bal = chainBalances[key];
+              const nativeSymbol = isSolanaChain(key) ? 'SOL' : 'ETH';
+              return (
+                <div key={key} className="border-b border-gray-700 last:border-b-0">
+                  <div className="px-3 pt-2 pb-1 text-xs font-medium text-gray-500">{label}</div>
+                  <div className="flex w-full items-center px-4 py-2 text-sm text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => bal?.address && navigator.clipboard?.writeText(bal.address).catch(() => {})}
+                      className="text-left cursor-pointer shrink-0"
+                      title={bal?.address ?? '—'}
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                    <span className="text-gray-100 pl-2 flex-1 text-sm truncate" title={bal?.address ?? '—'}>
+                      {bal ? truncateAddress(bal.address) : '—'}
+                    </span>
+                  </div>
+                  {bal && (
+                    <div className="px-4 pb-2 flex flex-col gap-1">
+                      {hasNonZero(bal.eth) && (
+                        <div className="flex justify-between text-sm text-gray-300">
+                          <span>{nativeSymbol}</span>
+                          <span className="text-gray-100" title={bal.eth}>{fmtBal(bal.eth)}</span>
+                        </div>
+                      )}
+                      {hasNonZero(bal.usdc) && (
+                        <div className="flex justify-between text-sm text-gray-300">
+                          <span>USDC</span>
+                          <span className="text-gray-100" title={bal.usdc}>{fmtBal(bal.usdc)}</span>
+                        </div>
+                      )}
+                      {!hasNonZero(bal.eth) && !hasNonZero(bal.usdc) && (
+                        <div className="text-xs text-gray-500">No balance</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             <div className="h-[1px] bg-gray-700 w-full" />
             {!isSolanaChain(selectedChain) && (
             <button
@@ -378,7 +431,7 @@ export default function UserMenu() {
       </div>
 
       {isWalletPanel && isWalletPanelOpen && (
-        <div className="absolute right-0 top-full mt-3 w-64 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[90] overflow-hidden flex flex-col">
+        <div className="absolute right-0 top-full mt-3 w-72 max-h-[70vh] overflow-y-auto rounded-xl bg-gray-900 border border-gray-700 shadow-2xl z-[90] flex flex-col">
           <button
             type="button"
             onClick={() => setIsWalletPanelOpen(false)}
@@ -388,45 +441,47 @@ export default function UserMenu() {
           >
             ×
           </button>
-          <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300 break-all">
-            <button
-              type="button"
-              onClick={() => {
-                if (evmAddress) navigator.clipboard?.writeText(evmAddress).catch(() => {});
-              }}
-              className="text-left cursor-pointer"
-              title={evmAddress || 'Unknown'}
-            >
-              <Copy className="w-4 h-4" />
-            </button>
-            <span className="text-gray-100 px-3 text-right flex-1 text-sm" title={evmAddress || 'Unknown'}>
-              {evmAddress ? `${evmAddress.slice(0, 6)}...${evmAddress.slice(-4)}` : '—'}
-            </span>
-          </div>
-          <div className="h-[1px] bg-gray-700 w-full" />
-          <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300">
-            <span className="flex-1">{isSolanaChain(selectedChain) ? 'SOL' : 'ETH'}</span>
-            <span
-              className="text-gray-100 px-3 text-center whitespace-nowrap hover:whitespace-normal"
-              title={ethBalance}
-            >
-              {Number.isNaN(Number(ethBalance))
-                ? ethBalance
-                : Number(ethBalance).toFixed(BALANCE_DECIMALS)}
-            </span>
-          </div>
-          <div className="h-[1px] bg-gray-700 w-full" />
-          <div className="flex w-full items-center px-4 py-3 text-sm text-gray-300">
-            <span className="flex-1">USDC</span>
-            <span
-              className="text-gray-100 px-3 text-center whitespace-nowrap hover:whitespace-normal"
-              title={usdcBalance}
-            >
-              {Number.isNaN(Number(usdcBalance))
-                ? usdcBalance
-                : Number(usdcBalance).toFixed(BALANCE_DECIMALS)}
-            </span>
-          </div>
+          {WALLET_DROPDOWN_CHAINS.map(({ key, label }) => {
+            const bal = chainBalances[key];
+            const nativeSymbol = isSolanaChain(key) ? 'SOL' : 'ETH';
+            return (
+              <div key={key} className="border-b border-gray-700 last:border-b-0 px-4 py-3">
+                <div className="text-xs font-medium text-gray-500 mb-2">{label}</div>
+                <div className="flex w-full items-center text-sm text-gray-300 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => bal?.address && navigator.clipboard?.writeText(bal.address).catch(() => {})}
+                    className="text-left cursor-pointer shrink-0"
+                    title={bal?.address ?? '—'}
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                  <span className="text-gray-100 pl-2 flex-1 text-sm truncate" title={bal?.address ?? '—'}>
+                    {bal ? truncateAddress(bal.address) : '—'}
+                  </span>
+                </div>
+                {bal && (
+                  <div className="flex flex-col gap-1 pl-6">
+                    {hasNonZero(bal.eth) && (
+                      <div className="flex justify-between text-sm text-gray-300">
+                        <span>{nativeSymbol}</span>
+                        <span className="text-gray-100" title={bal.eth}>{fmtBal(bal.eth)}</span>
+                      </div>
+                    )}
+                    {hasNonZero(bal.usdc) && (
+                      <div className="flex justify-between text-sm text-gray-300">
+                        <span>USDC</span>
+                        <span className="text-gray-100" title={bal.usdc}>{fmtBal(bal.usdc)}</span>
+                      </div>
+                    )}
+                    {!hasNonZero(bal.eth) && !hasNonZero(bal.usdc) && (
+                      <div className="text-xs text-gray-500">No balance</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <div className="h-[1px] bg-gray-700 w-full" />
           {!isSolanaChain(selectedChain) && (
           <button

@@ -163,6 +163,7 @@ export default function Chat() {
           message: userMessage.trim(),
           history: messages.map(m => ({ role: m.role, content: m.content })),
           accessToken,
+          selectedChain: resolveSelectedChain(),
         }),
       });
 
