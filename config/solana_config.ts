@@ -1,6 +1,8 @@
 /**
  * Solana mainnet config for RPC and explorer.
- * RPC: use NEXT_PUBLIC_SOLANA_RPC_URL or default public endpoint.
+ * RPC: NEXT_PUBLIC_SOLANA_RPC_URL (or SOLANA_RPC_URL) or public endpoint.
+ * The public RPC (api.mainnet-beta.solana.com) often returns 403; use a free
+ * provider (e.g. Helius, QuickNode, Alchemy) for reliable swaps.
  */
 const SOLANA_RPC_URL =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||

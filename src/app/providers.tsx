@@ -6,7 +6,14 @@ import { createSolanaRpc, createSolanaRpcSubscriptions, mainnet as solanaMainnet
 import { base, baseSepolia, mainnet, sepolia } from 'viem/chains';
 
 const SOLANA_RPC_HTTP = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
-const SOLANA_RPC_WS = process.env.NEXT_PUBLIC_SOLANA_RPC_WS || 'wss://api.mainnet-beta.solana.com';
+// Derive WebSocket from HTTP URL when WS not set (e.g. Helius: same host, wss instead of https)
+const SOLANA_RPC_WS =
+  process.env.NEXT_PUBLIC_SOLANA_RPC_WS ||
+  (SOLANA_RPC_HTTP.startsWith('https://')
+    ? SOLANA_RPC_HTTP.replace(/^https:\/\//, 'wss://')
+    : SOLANA_RPC_HTTP.startsWith('http://')
+      ? SOLANA_RPC_HTTP.replace(/^http:\/\//, 'ws://')
+      : 'wss://api.mainnet-beta.solana.com');
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? process.env.PRIVY_APP_ID;

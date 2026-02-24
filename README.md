@@ -95,10 +95,10 @@ Privy's embedded wallet needs an RPC config for `solana:mainnet` so `signAndSend
 - `createSolanaRpc(mainnet(url))` — HTTP RPC
 - `createSolanaRpcSubscriptions(mainnet(url))` — WebSocket subscriptions
 
-**Optional env** (defaults to public Solana mainnet; omit unless you use a custom RPC e.g. Helius, QuickNode):
+**Solana RPC env:** The default public RPC (`api.mainnet-beta.solana.com`) often returns **403** (rate limit). For reliable Solana swaps, set a free RPC in `.env`:
 
-- `NEXT_PUBLIC_SOLANA_RPC_URL` — default `https://api.mainnet-beta.solana.com`
-- `NEXT_PUBLIC_SOLANA_RPC_WS` — default `wss://api.mainnet-beta.solana.com`
+- `NEXT_PUBLIC_SOLANA_RPC_URL` — default `https://api.mainnet-beta.solana.com`; recommend e.g. [Helius](https://www.helius.dev), QuickNode, or Alchemy (free tier).
+- `NEXT_PUBLIC_SOLANA_RPC_WS` — optional; default `wss://api.mainnet-beta.solana.com`. Set if your provider uses a different WebSocket URL.
 
 ## Swap history (0G)
 

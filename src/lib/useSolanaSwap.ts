@@ -60,14 +60,24 @@ export function useSolanaSwap(explicitChain?: ChainKey) {
     const versionedTx = VersionedTransaction.deserialize(txBuffer);
     const serialized = versionedTx.serialize();
 
-    const { signature } = await signAndSendTransaction({
-      transaction: serialized,
-      wallet,
-      chain: 'solana:mainnet',
-    });
+    try {
+      const { signature } = await signAndSendTransaction({
+        transaction: serialized,
+        wallet,
+        chain: 'solana:mainnet',
+      });
 
-    const sigBase58 =
-      typeof signature === 'string' ? signature : bs58.encode(signature);
-    return sigBase58;
+      const sigBase58 =
+        typeof signature === 'string' ? signature : bs58.encode(signature);
+      return sigBase58;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('403') || msg.includes('HTTP error (403)')) {
+        throw new Error(
+          'Solana RPC returned 403 (rate limit). Use a custom RPC: set NEXT_PUBLIC_SOLANA_RPC_URL in .env to a free RPC (e.g. Helius: https://www.helius.dev, QuickNode, Alchemy) and restart the dev server.'
+        );
+      }
+      throw err;
+    }
   };
 }
