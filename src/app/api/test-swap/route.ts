@@ -79,14 +79,17 @@ export async function POST(req: Request) {
     })();
 
     const primaryRpcUrls = resolveRpcUrls(chainConfig.rpcUrls);
+    const uniqueRpcUrls = Array.from(new Set([...primaryRpcUrls, ...fallbackUrls]));
     const provider = new ethers.providers.FallbackProvider(
-      [...primaryRpcUrls, ...fallbackUrls].map(
-        (rpcUrl) =>
-          new ethers.providers.StaticJsonRpcProvider(rpcUrl, {
-            chainId: chainConfig.chainId,
-            name: resolvedChainKey.toLowerCase(),
-          }),
-      ),
+      uniqueRpcUrls.map((rpcUrl) => ({
+        provider: new ethers.providers.StaticJsonRpcProvider(rpcUrl, {
+          chainId: chainConfig.chainId,
+          name: resolvedChainKey.toLowerCase(),
+        }),
+        priority: 1,
+        stallTimeout: 2500,
+        weight: 1,
+      })),
       1,
     );
     const router = new AlphaRouter({ chainId: chainConfig.chainId, provider });
@@ -118,6 +121,58 @@ export async function POST(req: Request) {
     const normalizedSellToken = sellToken?.toUpperCase();
     const sellCurrency = normalizedSellToken === 'ETH' ? Ether.onChain(chainConfig.chainId) : WETH;
 
+    const zeroXEndpoints: Partial<Record<ChainKey, string>> = {
+      ETH_MAINNET: 'https://api.0x.org/swap/v1/quote',
+      ETH_SEPOLIA: 'https://sepolia.api.0x.org/swap/v1/quote',
+      BASE_MAINNET: 'https://base.api.0x.org/swap/v1/quote',
+      BASE_SEPOLIA: 'https://base-sepolia.api.0x.org/swap/v1/quote',
+    };
+
+    const zeroXEndpoint = zeroXEndpoints[resolvedChainKey];
+    const zeroXApiKey = process.env.ZEROX_API_KEY;
+    const zeroXSellToken = normalizedSellToken === 'ETH' ? 'ETH' : tokenConfig.WETH.address;
+    const zeroXBuyToken = normalizedBuyToken === 'WETH' ? tokenConfig.WETH.address : tokenConfig.USDC.address;
+
+    if (zeroXEndpoint) {
+      try {
+        const zeroXUrl = new URL(zeroXEndpoint);
+        zeroXUrl.searchParams.set('sellToken', zeroXSellToken);
+        zeroXUrl.searchParams.set('buyToken', zeroXBuyToken);
+        zeroXUrl.searchParams.set('sellAmount', amount);
+        zeroXUrl.searchParams.set('takerAddress', recipient);
+        zeroXUrl.searchParams.set('slippagePercentage', '0.005');
+
+        const zeroXResponse = await fetch(zeroXUrl, {
+          headers: {
+            Accept: 'application/json',
+            ...(zeroXApiKey ? { '0x-api-key': zeroXApiKey } : {}),
+          },
+          method: 'GET',
+        });
+
+        if (zeroXResponse.ok) {
+          const zeroXPayload = (await zeroXResponse.json()) as {
+            to?: string;
+            data?: string;
+            value?: string;
+          };
+
+          if (zeroXPayload?.to && zeroXPayload?.data && zeroXPayload?.value !== undefined) {
+            return NextResponse.json({
+              methodParameters: {
+                to: zeroXPayload.to,
+                calldata: zeroXPayload.data,
+                value: zeroXPayload.value,
+              },
+              source: '0x',
+            });
+          }
+        }
+      } catch (zeroXError) {
+        console.warn('0x quote failed, falling back to Uniswap:', zeroXError);
+      }
+    }
+
     const route = await router.route(
       CurrencyAmount.fromRawAmount(sellCurrency, amount),
       targetToken,
@@ -134,7 +189,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No swap route found' }, { status: 500 });
     }
 
-    return NextResponse.json({ methodParameters: route.methodParameters });
+    return NextResponse.json({ methodParameters: route.methodParameters, source: 'uniswap' });
   } catch (error) {
     console.error('Test swap error:', error);
     const message = error instanceof Error ? error.message : 'Unexpected error';

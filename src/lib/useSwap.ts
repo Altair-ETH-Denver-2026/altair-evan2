@@ -36,7 +36,10 @@ const ensureEvmChain = async (
   chainKey: ChainKey,
 ) => {
   const chainConfig = chainConfigs[chainKey];
+  console.log('[RPC] ensureEvmChain chainKey:', chainKey);
+  console.log('[RPC] ensureEvmChain rpcUrls:', chainConfig.rpcUrls);
   const resolvedRpcUrls = resolveRpcUrls(chainConfig.rpcUrls);
+  console.log('[RPC] ensureEvmChain resolvedRpcUrls:', resolvedRpcUrls);
   const targetChainId = `0x${chainConfig.chainId.toString(16)}`;
   const chainMeta: Record<ChainKey, { name: string; explorer: string }> = {
     ETH_MAINNET: { name: 'Ethereum Mainnet', explorer: 'https://etherscan.io' },
@@ -51,8 +54,13 @@ const ensureEvmChain = async (
       params: [{ chainId: targetChainId }],
     });
   } catch (switchError: unknown) {
-    const error = switchError as { code?: number };
-    if (error?.code === 4902) {
+    const error = switchError as { code?: number; message?: string };
+    const unsupportedChain =
+      error?.code === 4902 ||
+      error?.code === -32602 ||
+      (error?.message?.toLowerCase().includes('unsupported') ?? false);
+
+    if (unsupportedChain) {
       await ethereumProvider.request?.({
         method: 'wallet_addEthereumChain',
         params: [
@@ -81,7 +89,9 @@ export const useSwap = (explicitChain?: ChainKey) => {
     }
 
     const selectedChain = resolveSelectedChain(explicitChain);
+    console.log('[RPC] selectedChain:', selectedChain);
     const chainConfig = chainConfigs[selectedChain];
+    console.log('[RPC] chainConfig rpcUrls:', chainConfig?.rpcUrls);
     const tokenConfig = tokenConfigs[selectedChain];
     if (!chainConfig) {
       throw new Error('Unsupported chain configuration.');
@@ -89,9 +99,7 @@ export const useSwap = (explicitChain?: ChainKey) => {
 
     const wallet = wallets[0];
     const ethereumProvider = await wallet.getEthereumProvider();
-    if (ethereumProvider?.request) {
-      await ensureEvmChain(ethereumProvider, selectedChain);
-    }
+    await ensureEvmChain(ethereumProvider, selectedChain);
 
     const provider = new ethers.providers.Web3Provider(ethereumProvider, chainConfig.chainId);
     await provider.ready;
@@ -157,6 +165,7 @@ export const useSwap = (explicitChain?: ChainKey) => {
       await wethApprove.approve(routePayload.methodParameters.to, ethers.constants.MaxUint256);
     }
 
+    console.log('[Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap][Swap] RPC URL:', (provider as ethers.providers.Web3Provider).connection?.url);
     const tx = await signer.sendTransaction({
       to: routePayload.methodParameters.to,
       data: routePayload.methodParameters.calldata,

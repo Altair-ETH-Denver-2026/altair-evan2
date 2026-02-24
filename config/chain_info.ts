@@ -1,10 +1,13 @@
 export const ALCHEMY_API_KEY_PLACEHOLDER = 'ALCHEMY_API_KEY';
 
 export const resolveRpcUrls = (rpcUrls: string[]) => {
-  const apiKey = process.env.ALCHEMY_API_KEY ?? process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
-  return rpcUrls
+  const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
+  const resolved = rpcUrls
     .map((url) => (apiKey ? url.replace(ALCHEMY_API_KEY_PLACEHOLDER, apiKey) : url))
     .filter((url) => !url.includes(ALCHEMY_API_KEY_PLACEHOLDER));
+  console.log('[RPC] resolveRpcUrls input:', rpcUrls);
+  console.log('[RPC] resolveRpcUrls output:', resolved);
+  return resolved;
 };
 
 export const BASE_SEPOLIA = {
