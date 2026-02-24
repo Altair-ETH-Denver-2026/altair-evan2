@@ -2,8 +2,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useSwap } from '../lib/useSwap';
-import { UserRound, LogOut, Settings, Wallet, Wrench, Copy, Globe2, Check } from 'lucide-react';
+import { useSwap, useWithdraw } from '../lib/useSwap';
+import { ethers } from 'ethers';
+import { UserRound, LogOut, Settings, Wallet, Wrench, Copy, Globe2, Check, ArrowUpRight } from 'lucide-react';
 import { useEffect as useClientEffect, useState as useClientState } from 'react';
 import { BLOCKCHAIN, CHAINS, type ChainKey } from '../../config/blockchain_config';
 import { BALANCE_DECIMALS, MENU_ICONS, WALLET_DISPLAY, X_SIZE } from '../../config/ui_config';
@@ -23,6 +24,12 @@ export default function UserMenu() {
   const [isNetworkOpen, setIsNetworkOpen] = useState(false);
   const [selectedChain, setSelectedChain] = useState<ChainKey>(BLOCKCHAIN);
   const executeSwap = useSwap(selectedChain);
+  const withdraw = useWithdraw(selectedChain);
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+  const [withdrawTo, setWithdrawTo] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const isWalletDropDown = WALLET_DISPLAY.active === 'drop_down';
   const isWalletPanel = WALLET_DISPLAY.active === 'panel';
@@ -349,6 +356,21 @@ export default function UserMenu() {
                   : Number(usdcBalance).toFixed(BALANCE_DECIMALS)}
               </span>
             </div>
+            <div className="h-[1px] bg-gray-700 w-full" />
+            <button
+              type="button"
+              onClick={() => {
+                setIsWithdrawOpen(true);
+                setWithdrawError(null);
+                setWithdrawTo('');
+                setWithdrawAmount('');
+                setIsWalletOpen(false);
+              }}
+              className="flex w-full items-center px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 transition-colors text-left"
+            >
+              <ArrowUpRight className="w-4 h-4 mr-3" style={{ minWidth: 16 }} />
+              <span className="flex-1">Withdraw</span>
+            </button>
           </div>
         )}
       </div>
@@ -402,6 +424,141 @@ export default function UserMenu() {
                 ? usdcBalance
                 : Number(usdcBalance).toFixed(BALANCE_DECIMALS)}
             </span>
+          </div>
+          <div className="h-[1px] bg-gray-700 w-full" />
+          <button
+            type="button"
+            onClick={() => {
+              setIsWithdrawOpen(true);
+              setWithdrawError(null);
+              setWithdrawTo('');
+              setWithdrawAmount('');
+              setIsWalletPanelOpen(false);
+            }}
+            className="flex w-full items-center px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 transition-colors text-left"
+          >
+            <ArrowUpRight className="w-4 h-4 mr-3" style={{ minWidth: 16 }} />
+            <span className="flex-1">Withdraw</span>
+          </button>
+        </div>
+      )}
+
+      {/* Withdraw modal */}
+      {isWithdrawOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60" onClick={() => !isWithdrawing && setIsWithdrawOpen(false)}>
+          <div
+            className="w-full max-w-md rounded-xl bg-gray-900 border border-gray-700 shadow-2xl p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-medium text-gray-100 mb-4">Withdraw ETH</h3>
+            <p className="text-sm text-gray-400 mb-3">
+              Send native ETH on <span className="text-gray-300">{selectedChain.replace(/_/g, ' ')}</span> to an address.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Recipient address</label>
+                <input
+                  type="text"
+                  value={withdrawTo}
+                  onChange={(e) => { setWithdrawTo(e.target.value.trim()); setWithdrawError(null); }}
+                  placeholder="0x..."
+                  className="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                  disabled={isWithdrawing}
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs text-gray-500">Amount (ETH)</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const bal = Number(ethBalance);
+                      const gasBuffer = 0.001;
+                      const max = Number.isFinite(bal) && bal > gasBuffer ? bal - gasBuffer : bal > 0 ? bal : 0;
+                      setWithdrawAmount(max > 0 ? String(Math.max(0, max)) : '');
+                      setWithdrawError(null);
+                    }}
+                    disabled={isWithdrawing}
+                    className="text-xs text-blue-400 hover:text-blue-300 font-medium disabled:opacity-50"
+                  >
+                    Max
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={withdrawAmount}
+                  onChange={(e) => { setWithdrawAmount(e.target.value); setWithdrawError(null); }}
+                  placeholder="0.01"
+                  className="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                  disabled={isWithdrawing}
+                />
+              </div>
+            </div>
+            {withdrawError && (
+              <p className="mt-2 text-sm text-red-400">{withdrawError}</p>
+            )}
+            <div className="mt-4 flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => !isWithdrawing && setIsWithdrawOpen(false)}
+                className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300 hover:bg-gray-800 text-sm"
+                disabled={isWithdrawing}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setWithdrawError(null);
+                  const to = withdrawTo.trim();
+                  const amount = withdrawAmount.trim();
+                  if (!to) {
+                    setWithdrawError('Enter a recipient address.');
+                    return;
+                  }
+                  if (!ethers.isAddress(to)) {
+                    setWithdrawError('Invalid EVM address.');
+                    return;
+                  }
+                  const num = Number(amount);
+                  if (!Number.isFinite(num) || num <= 0) {
+                    setWithdrawError('Enter a valid amount (ETH).');
+                    return;
+                  }
+                  setIsWithdrawing(true);
+                  try {
+                    const txHash = await withdraw(to, amount);
+                    showSwapMessage({ type: 'success', text: `Withdrawal sent.\n${txHash}` });
+                    setIsWithdrawOpen(false);
+                    setWithdrawTo('');
+                    setWithdrawAmount('');
+                    // Refresh balance after a short delay
+                    setTimeout(() => {
+                      const token = typeof window !== 'undefined' ? localStorage.getItem('privy:token') : null;
+                      const cached = typeof window !== 'undefined' ? localStorage.getItem(cachedEvmKey) : null;
+                      fetch('/api/balances', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ accessToken: token, chain: selectedChain, walletAddress: cached ?? undefined }),
+                      }).then((res) => res.json()).then((data) => {
+                        if (data?.eth) setEthBalance(data.eth);
+                        if (data?.usdc) setUsdcBalance(data.usdc);
+                      }).catch(() => {});
+                    }, 2000);
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : 'Withdrawal failed';
+                    setWithdrawError(msg);
+                  } finally {
+                    setIsWithdrawing(false);
+                  }
+                }}
+                disabled={isWithdrawing}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm disabled:opacity-50"
+              >
+                {isWithdrawing ? 'Sending…' : 'Send'}
+              </button>
+            </div>
           </div>
         </div>
       )}
