@@ -62,12 +62,14 @@ This project centralizes runtime and UI configuration in the root-level [`config
 - `WALLET_DISPLAY`: UI mode config (`panel` vs `drop_down`).
 - `MENU_ICONS`: spacing, size, and visual styling for the top-right icon row (offsets, justification, size, icon/container colors, border color/width, highlight color).
 - `HOME_ICON`: independent position/size config for the top-left home logo.
-- `CHAT_PANEL`: sizing, border, and color palette for the chat container and bubbles (panel size, border, bubble colors, text colors, and agent icon border).
+- `TITLE_PANEL`: offsets, text spacing, logo size, gradient colors, and overall scale for the title block.
+- `CHAT_PANEL`: sizing, border, and color palette for the chat container and bubbles (panel size, border, bubble/text colors, input focus highlight, agent icon border, and send button colors).
 
 **Usage:**
 - Menu icon layout and styling in [`UserMenu`](src/components/UserMenu.tsx:8).
 - Home logo positioning/sizing in [`page.tsx`](src/app/page.tsx:16).
-- Chat container/bubble styling in [`Chat`](src/components/Chat.tsx:145).
+- Title block sizing/spacing/gradient in [`page.tsx`](src/app/page.tsx:51).
+- Chat container/bubble/button/input styling in [`Chat`](src/components/Chat.tsx:145).
 - Logo hover animation timing in [`SpinningLogo`](src/components/SpinningLogo.tsx:5).
 
 ## General Import Rules

@@ -36,6 +36,10 @@ export const TITLE_PANEL = {
   text_color: '#9ca3af',
   size: 1,
   text_spacing: -1,
+  title_gradient: {
+    color_start: '#60a5fa',
+    color_end: '#9333ea',
+  },
 };
 
 export const CHAT_PANEL = {
@@ -53,3 +57,4 @@ export const CHAT_PANEL = {
   chat_button_container_color: '#2563eb',
   chat_button_icon_color: '#ffffff',
 };
+

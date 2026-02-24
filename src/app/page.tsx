@@ -62,10 +62,11 @@ export default function Home() {
           </div>
           <div className="text-left">
             <h1
-              className="font-extrabold bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent"
+              className="font-extrabold bg-clip-text text-transparent"
               style={{
                 fontSize: `${TITLE_PANEL.size * 3}rem`,
                 marginBottom: `${TITLE_PANEL.text_spacing * 4}px`,
+                backgroundImage: `linear-gradient(to right, ${TITLE_PANEL.title_gradient.color_start}, ${TITLE_PANEL.title_gradient.color_end})`,
               }}
             >
               Altair
