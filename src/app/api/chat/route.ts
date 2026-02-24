@@ -106,7 +106,7 @@ function buildSystemPrompt(
   const chainBlock =
     selectedChain === 'SOLANA_MAINNET' ? SOLANA_SWAP_BLOCK : EVM_SWAP_BLOCK;
   const balanceSection = balanceBlock
-    ? `\n## User wallet balances (current chain)\nUse this when the user asks for their balance, to "sell all" of a token, or how much they hold. Do not say you cannot see their wallet—you have access to the balances below.\n${balanceBlock}\n`
+    ? `\n## User wallet balances (portfolio — all chains)\nYou have access to the user's Privy wallets across Solana, Base, Ethereum, and Arbitrum mainnets. Use the data below when the user asks for their balance, "portfolio", "combined balance", "sell all" of a token, or how much they hold on any chain. You can summarize per chain or give a combined token view (e.g. total USDC across chains). Do not say you cannot see their wallet—you have full portfolio access.\n${balanceBlock}\n`
     : '';
   return `${BASE_PROMPT}
 ${chainBlock}
@@ -173,17 +173,26 @@ export async function POST(req: Request) {
       }
     }
 
-    const chainForBalance: ChainKey = (selectedChain && selectedChain in CHAINS ? selectedChain : BLOCKCHAIN) as ChainKey;
+    const PORTFOLIO_CHAINS: ChainKey[] = ['SOLANA_MAINNET', 'BASE_MAINNET', 'ETH_MAINNET', 'ARBITRUM_ONE'];
     let balanceBlock: string | null = null;
     if (accessToken) {
       try {
-        const balanceData = await fetchUserBalanceForChain(accessToken, chainForBalance);
-        if (balanceData && balanceData.address) {
-          const { address: _addr, ...balances } = balanceData;
-          balanceBlock = `Current chain: ${chainForBalance}. Balances: ${JSON.stringify(balances)}`;
+        const results = await Promise.all(
+          PORTFOLIO_CHAINS.map(async (chain) => {
+            const data = await fetchUserBalanceForChain(accessToken, chain);
+            if (!data?.address) return { chain, balances: null };
+            const { address: _a, ...balances } = data;
+            return { chain, balances };
+          })
+        );
+        const parts = results
+          .filter((r) => r.balances && Object.keys(r.balances).length > 0)
+          .map((r) => `${r.chain}: ${JSON.stringify(r.balances)}`);
+        if (parts.length > 0) {
+          balanceBlock = `Portfolio (all chains). User's Privy wallet balances:\n${parts.join('\n')}`;
         }
       } catch (balanceErr) {
-        console.warn('[Chat] Balance fetch for prompt failed:', balanceErr);
+        console.warn('[Chat] Portfolio balance fetch failed:', balanceErr);
       }
     }
 
